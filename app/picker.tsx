@@ -1,16 +1,19 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react"; // 👈 Import useState
 import {
   View,
   Text,
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
-} from "react-native";
+  TextInput,
+} from "react-native"; // 👈 Import TextInput
 import { useDeckStore } from "../state/store";
 import { Stack } from "expo-router";
 
 export default function PickerScreen() {
-  // --- FIX: Select EACH piece of state and action INDIVIDUALLY ---
+  // --- STEP 1: Add state for the search input ---
+  const [searchTerm, setSearchTerm] = useState("");
+
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
   const isLoaded = useDeckStore((state) => state.isLoaded);
@@ -18,13 +21,20 @@ export default function PickerScreen() {
   const nextWord = useDeckStore((state) => state.nextWord);
   const prevWord = useDeckStore((state) => state.prevWord);
 
-  // Memoize the options object to prevent re-renders
   const screenOptions = useMemo(
     () => ({
       title: deckName,
     }),
     [deckName]
   );
+
+  // --- STEP 2: Create a placeholder search function ---
+  const handleSearch = () => {
+    // For now, we'll just log the search term.
+    // In the next step, we'll use this to search for symbols.
+    const query = searchTerm.trim() || currentWord?.english || "";
+    console.log(`Searching for: "${query}"`);
+  };
 
   if (!isLoaded || deckData.length === 0) {
     return (
@@ -52,6 +62,24 @@ export default function PickerScreen() {
         </Text>
       </View>
 
+      {/* --- STEP 3: Add the search UI components --- */}
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Custom Search..."
+          placeholderTextColor="#888"
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+          onSubmitEditing={handleSearch} // Search when user presses return key
+        />
+        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+          <Text style={styles.navButtonText}>Refresh Search</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* This is the scrollable grid where results will go later */}
+      <View style={styles.resultsContainer} />
+
       <View style={styles.navContainer}>
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
@@ -73,41 +101,75 @@ export default function PickerScreen() {
   );
 }
 
-// ... (styles are unchanged)
+// --- STEP 4: Add new styles for the search controls ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: "space-between",
+    justifyContent: "flex-start", // Changed
     alignItems: "center",
-    padding: 20,
-    paddingBottom: 40,
+    padding: 10,
   },
   wordContainer: {
-    flex: 1,
-    justifyContent: "center",
+    width: "100%",
     alignItems: "center",
+    padding: 10,
+    marginBottom: 10,
   },
   statusText: {
     color: "gray",
     fontSize: 18,
-    marginBottom: 20,
+    marginBottom: 10,
   },
   wordText: {
     color: "white",
-    fontSize: 40,
+    fontSize: 32, // Adjusted size
     fontWeight: "bold",
     textAlign: "center",
   },
   infoText: {
     color: "cyan",
     fontSize: 14,
-    marginTop: 10,
+    marginTop: 8,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    width: "100%",
+    paddingHorizontal: 10,
+    marginBottom: 10,
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: "#333",
+    color: "white",
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginRight: 10,
+  },
+  searchButton: {
+    backgroundColor: "#555",
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    justifyContent: "center",
+  },
+  resultsContainer: {
+    flex: 1, // This will take up the available space for search results
+    width: "100%",
+    borderColor: "#333",
+    borderWidth: 1,
+    borderRadius: 8,
+    marginBottom: 10,
   },
   navContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     width: "100%",
     paddingHorizontal: 10,
+    paddingTop: 10,
+    borderTopColor: "#333",
+    borderTopWidth: 1,
   },
   navButton: {
     backgroundColor: "#007AFF",
