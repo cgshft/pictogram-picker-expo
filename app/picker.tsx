@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react"; // 👈 Import useEffect
+import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,10 +7,16 @@ import {
   TouchableOpacity,
   TextInput,
   FlatList,
+  Button,
 } from "react-native";
 import { useDeckStore } from "../state/store";
 import { Stack } from "expo-router";
 import Fuse from "fuse.js";
+import * as Sharing from "expo-sharing";
+// --- FIX #1: Import 'Paths' ---
+import { File, Paths } from "expo-file-system";
+import Papa from "papaparse";
+
 import { mulberryData } from "../assets/mulberrySymbols.js";
 import SymbolItem from "../components/SymbolItem";
 
@@ -24,6 +30,7 @@ export default function PickerScreen() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
 
+  // --- FIX #2: Revert to individual selectors to prevent infinite loops ---
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
   const isLoaded = useDeckStore((state) => state.isLoaded);
@@ -32,35 +39,58 @@ export default function PickerScreen() {
   const prevWord = useDeckStore((state) => state.prevWord);
   const selectSymbol = useDeckStore((state) => state.selectSymbol);
 
-  const screenOptions = useMemo(() => ({ title: deckName }), [deckName]);
+  const handleExport = async () => {
+    if (deckData.length === 0) {
+      alert("No data to export.");
+      return;
+    }
+    const csvString = Papa.unparse(deckData);
+
+    // --- FIX #3: Use 'Paths.cache' instead of 'File.cache' ---
+    const file = new File(Paths.cache, `export_${Date.now()}.csv`);
+
+    try {
+      await file.write(csvString);
+
+      if (!(await Sharing.isAvailableAsync())) {
+        alert("Sharing isn't available on your platform");
+        return;
+      }
+
+      await Sharing.shareAsync(file.uri);
+    } catch (error) {
+      console.error("Error exporting file:", error);
+      alert("Failed to export CSV.");
+    }
+  };
+
+  const screenOptions = useMemo(
+    () => ({
+      title: deckName,
+      headerRight: () => <Button onPress={handleExport} title="Export" />,
+    }),
+    [deckName, deckData]
+  );
 
   const currentWord = deckData[currentIndex];
 
-  // --- REFACTOR: Create a reusable search function ---
   const performSearch = (query: string) => {
     if (!query) {
       setSearchResults([]);
       return;
     }
-    console.log(`Searching for: "${query}"`);
     const results = fuse.search(query);
-    // ⭐️ CHANGE 1: Limit results to the top 4
     setSearchResults(results.slice(0, 4));
   };
 
-  // --- NEW: Use an effect to auto-search when the word changes ---
   useEffect(() => {
     const newWordQuery = deckData[currentIndex]?.english;
     if (newWordQuery) {
-      // ⭐️ CHANGE 2: Clear the search input
       setSearchTerm("");
-      // ⭐️ CHANGE 3: Automatically perform a search for the new word
       performSearch(newWordQuery);
     }
-    // This effect will re-run whenever currentIndex changes
   }, [currentIndex, deckData]);
 
-  // This function is now only for manual searches via the button
   const handleSearch = () => {
     const query = searchTerm.trim() || currentWord?.english || "";
     performSearch(query);
@@ -80,7 +110,7 @@ export default function PickerScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={screenOptions} />
-
+      {/* ... The rest of your JSX is unchanged ... */}
       <View style={styles.wordContainer}>
         <Text style={styles.statusText}>
           Word {currentIndex + 1} of {deckData.length}
@@ -90,7 +120,6 @@ export default function PickerScreen() {
           Symbol: {currentWord?.symbol_name || "None"}
         </Text>
       </View>
-
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.searchInput}
@@ -104,7 +133,6 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>Refresh</Text>
         </TouchableOpacity>
       </View>
-
       <FlatList
         data={searchResults}
         renderItem={({ item }) => (
@@ -117,7 +145,6 @@ export default function PickerScreen() {
         numColumns={3}
         contentContainerStyle={styles.resultsContainer}
       />
-
       <View style={styles.navContainer}>
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
