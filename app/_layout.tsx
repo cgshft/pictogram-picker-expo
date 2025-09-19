@@ -1,24 +1,25 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
-
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+import { Stack } from "expo-router";
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <Stack
+      // Configure the header for all screens in this stack
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: "#1E1E1E",
+        },
+        headerTintColor: "#fff",
+        headerTitleStyle: {
+          fontWeight: "bold",
+        },
+        contentStyle: {
+          backgroundColor: "#121212", // Set a default dark background for screen content
+        },
+      }}
+    >
+      {/* Define specific options for each screen */}
+      <Stack.Screen name="index" options={{ title: "Symbol Deck Home" }} />
+      <Stack.Screen name="picker" options={{ title: "Symbol Picker" }} />
+    </Stack>
   );
 }
