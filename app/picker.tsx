@@ -17,6 +17,7 @@ import { openmojiData } from "../assets/openmojiSymbols.js";
 import SymbolItem from "../components/SymbolItem";
 import { picomData } from "../assets/picomSymbols.js";
 import { scleraData } from "../assets/scleraSymbols.js";
+import { blissData } from "../assets/blissSymbols.js";
 
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
@@ -38,6 +39,12 @@ const fusePicom = new Fuse(picomData, {
 
 const fuseSclera = new Fuse(scleraData, {
   keys: ["search_term"],
+  includeScore: true,
+  threshold: 0.4,
+});
+
+const fuseBliss = new Fuse(blissData, {
+  keys: ["name"],
   includeScore: true,
   threshold: 0.4,
 });
@@ -69,14 +76,16 @@ export default function PickerScreen() {
 
     const mulberryResults = fuseMulberry.search(query).slice(0, 4);
     const openMojiResults = fuseOpenMoji.search(query).slice(0, 4);
-    const picomResults = fusePicom.search(query).slice(0, 4); // 👈 Search Picom
-    const scleraResults = fuseSclera.search(query).slice(0, 4); // 👈 Search Sclera
+    const picomResults = fusePicom.search(query).slice(0, 4);
+    const scleraResults = fuseSclera.search(query).slice(0, 4);
+    const blissResults = fuseBliss.search(query).slice(0, 4);
 
     const resultsBySource = {};
     if (mulberryResults.length > 0) resultsBySource.Mulberry = mulberryResults;
     if (openMojiResults.length > 0) resultsBySource.OpenMoji = openMojiResults;
     if (picomResults.length > 0) resultsBySource.Picom = picomResults; 
     if (scleraResults.length > 0) resultsBySource.Sclera = scleraResults;
+    if (blissResults.length > 0) resultsBySource.Bliss = blissResults;
 
     setSearchResults(resultsBySource);
   };
@@ -152,6 +161,8 @@ export default function PickerScreen() {
                     else if (sourceName === "Picom")
                       symbolName = item.item.name;
                     else if (sourceName === "Sclera")
+                      symbolName = item.item.name;
+                    else if (sourceName === "Bliss")
                       symbolName = item.item.name;
                     selectSymbol(symbolName, sourceName);
                   }}

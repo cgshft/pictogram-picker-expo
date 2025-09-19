@@ -22,6 +22,13 @@ const sources = [
     outputFile: path.join(__dirname, 'assets', 'scleraImages.js'),
     requirePathPrefix: '../assets/sclera-symbols/',
     outputVarName: 'scleraImages',
+  },
+  {
+    name: 'Bliss',
+    imageDir: path.join(__dirname, 'assets', 'bliss-png'),
+    outputFile: path.join(__dirname, 'assets', 'blissImages.js'),
+    requirePathPrefix: '../assets/bliss-png/',
+    outputVarName: 'blissImages',
   }
 ];
 
