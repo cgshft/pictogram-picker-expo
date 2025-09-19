@@ -29,6 +29,13 @@ const sources = [
     outputFile: path.join(__dirname, 'assets', 'blissImages.js'),
     requirePathPrefix: '../assets/bliss-png/',
     outputVarName: 'blissImages',
+  },
+  {
+    name: 'Noto Emoji',
+    imageDir: path.join(__dirname, 'assets', 'noto-emoji'),
+    outputFile: path.join(__dirname, 'assets', 'notoEmojiImages.js'),
+    requirePathPrefix: '../assets/noto-emoji/',
+    outputVarName: 'notoEmojiImages',
   }
 ];
 

@@ -18,6 +18,7 @@ import SymbolItem from "../components/SymbolItem";
 import { picomData } from "../assets/picomSymbols.js";
 import { scleraData } from "../assets/scleraSymbols.js";
 import { blissData } from "../assets/blissSymbols.js";
+import { notoEmojiData } from "../assets/notoEmojiSymbols.js";
 
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
@@ -45,6 +46,12 @@ const fuseSclera = new Fuse(scleraData, {
 
 const fuseBliss = new Fuse(blissData, {
   keys: ["name"],
+  includeScore: true,
+  threshold: 0.4,
+});
+
+const fuseNotoEmoji = new Fuse(notoEmojiData, {
+  keys: ["search_terms"],
   includeScore: true,
   threshold: 0.4,
 });
@@ -79,6 +86,7 @@ export default function PickerScreen() {
     const picomResults = fusePicom.search(query).slice(0, 4);
     const scleraResults = fuseSclera.search(query).slice(0, 4);
     const blissResults = fuseBliss.search(query).slice(0, 4);
+    const notoEmojiResults = fuseNotoEmoji.search(query).slice(0, 4);
 
     const resultsBySource = {};
     if (mulberryResults.length > 0) resultsBySource.Mulberry = mulberryResults;
@@ -86,6 +94,8 @@ export default function PickerScreen() {
     if (picomResults.length > 0) resultsBySource.Picom = picomResults; 
     if (scleraResults.length > 0) resultsBySource.Sclera = scleraResults;
     if (blissResults.length > 0) resultsBySource.Bliss = blissResults;
+    if (notoEmojiResults.length > 0)
+      resultsBySource["Noto Emoji"] = notoEmojiResults;
 
     setSearchResults(resultsBySource);
   };
@@ -151,31 +161,33 @@ export default function PickerScreen() {
               renderItem={({ item }) => (
                 <SymbolItem
                   item={item.item}
-                  source={sourceName as "Mulberry" | "OpenMoji" | "Picom"} // 👈 Add Picom to type
+                  source={
+                    sourceName as
+                      | "Mulberry"
+                      | "OpenMoji"
+                      | "Picom"
+                      | "Sclera"
+                      | "Bliss"
+                      | "Noto Emoji"
+                  }
                   onPress={() => {
-                    let symbolName = ""; // 👈 Determine symbol name based on source
+                    let symbolName = "";
                     if (sourceName === "Mulberry")
                       symbolName = item.item["symbol-en"];
                     else if (sourceName === "OpenMoji")
                       symbolName = item.item.annotation;
-                    else if (sourceName === "Picom")
+                    else if (
+                      ["Picom", "Sclera", "Bliss", "Noto Emoji"].includes(
+                        sourceName
+                      )
+                    ) {
                       symbolName = item.item.name;
-                    else if (sourceName === "Sclera")
-                      symbolName = item.item.name;
-                    else if (sourceName === "Bliss")
-                      symbolName = item.item.name;
+                    }
                     selectSymbol(symbolName, sourceName);
                   }}
                 />
               )}
-              // 👈 Update the keyExtractor to be more robust
-              keyExtractor={(item) =>
-                `${sourceName}-${
-                  item.item.hexcode ||
-                  item.item.filename ||
-                  item.item["symbol-en"]
-                }`
-              }
+              keyExtractor={(item) => `${sourceName}-${item.refIndex}`}
               horizontal={true}
               showsHorizontalScrollIndicator={false}
             />
