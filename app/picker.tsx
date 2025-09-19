@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react"; // 👈 Import useEffect
 import {
   View,
   Text,
@@ -30,18 +30,40 @@ export default function PickerScreen() {
   const deckName = useDeckStore((state) => state.deckName);
   const nextWord = useDeckStore((state) => state.nextWord);
   const prevWord = useDeckStore((state) => state.prevWord);
-  const selectSymbol = useDeckStore((state) => state.selectSymbol); // 👈 Get the new action
+  const selectSymbol = useDeckStore((state) => state.selectSymbol);
 
   const screenOptions = useMemo(() => ({ title: deckName }), [deckName]);
 
   const currentWord = deckData[currentIndex];
 
+  // --- REFACTOR: Create a reusable search function ---
+  const performSearch = (query: string) => {
+    if (!query) {
+      setSearchResults([]);
+      return;
+    }
+    console.log(`Searching for: "${query}"`);
+    const results = fuse.search(query);
+    // ⭐️ CHANGE 1: Limit results to the top 4
+    setSearchResults(results.slice(0, 4));
+  };
+
+  // --- NEW: Use an effect to auto-search when the word changes ---
+  useEffect(() => {
+    const newWordQuery = deckData[currentIndex]?.english;
+    if (newWordQuery) {
+      // ⭐️ CHANGE 2: Clear the search input
+      setSearchTerm("");
+      // ⭐️ CHANGE 3: Automatically perform a search for the new word
+      performSearch(newWordQuery);
+    }
+    // This effect will re-run whenever currentIndex changes
+  }, [currentIndex, deckData]);
+
+  // This function is now only for manual searches via the button
   const handleSearch = () => {
     const query = searchTerm.trim() || currentWord?.english || "";
-    if (!query) return;
-
-    const results = fuse.search(query);
-    setSearchResults(results);
+    performSearch(query);
   };
 
   if (!isLoaded || deckData.length === 0) {
@@ -64,7 +86,6 @@ export default function PickerScreen() {
           Word {currentIndex + 1} of {deckData.length}
         </Text>
         <Text style={styles.wordText}>{currentWord?.english || "N/A"}</Text>
-        {/* Now we can see when a symbol is assigned! */}
         <Text style={styles.infoText}>
           Symbol: {currentWord?.symbol_name || "None"}
         </Text>
@@ -89,7 +110,6 @@ export default function PickerScreen() {
         renderItem={({ item }) => (
           <SymbolItem
             name={item.item["symbol-en"]}
-            // Call the selectSymbol action when an item is pressed
             onPress={() => selectSymbol(item.item["symbol-en"], "Mulberry")}
           />
         )}
