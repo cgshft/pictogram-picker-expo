@@ -11,7 +11,15 @@ import { arasaacImages } from "../assets/arasaacImages.js";
 
 interface SymbolItemProps {
   item: any;
-  source: "Mulberry" | "OpenMoji" | "Picom" | "Sclera" | "Bliss" | "Noto Emoji" | 'ARASAAC';
+  source:
+    | "Mulberry"
+    | "OpenMoji"
+    | "Picom"
+    | "Sclera"
+    | "Bliss"
+    | "Noto Emoji"
+    | "ARASAAC"
+    | "AAC Image Library";
   onPress: () => void;
 }
 
@@ -69,6 +77,17 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
       <Text style={styles.errorText}>?</Text>
     );
   } else if (source === "ARASAAC") {
+    name = item.name;
+    imageContent = item.imageUrl ? (
+      <Image
+        source={{ uri: item.imageUrl }}
+        style={styles.image}
+        resizeMode="contain"
+      />
+    ) : (
+      <Text style={styles.errorText}>?</Text>
+    );
+  } else if (source === "AAC Image Library") {
     name = item.name;
     imageContent = item.imageUrl ? (
       <Image

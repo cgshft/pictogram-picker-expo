@@ -8,48 +8,49 @@ import {
   TextInput,
   FlatList,
   ScrollView,
+  Button,
+  Platform,
 } from "react-native";
 import { useDeckStore } from "../state/store";
 import { Stack } from "expo-router";
 import Fuse from "fuse.js";
+import * as Sharing from "expo-sharing";
+import { File, Paths } from "expo-file-system";
+import Papa from "papaparse";
+
 import { mulberryData } from "../assets/mulberrySymbols.js";
 import { openmojiData } from "../assets/openmojiSymbols.js";
-import SymbolItem from "../components/SymbolItem";
 import { picomData } from "../assets/picomSymbols.js";
 import { scleraData } from "../assets/scleraSymbols.js";
 import { blissData } from "../assets/blissSymbols.js";
 import { notoEmojiData } from "../assets/notoEmojiSymbols.js";
+import SymbolItem from "../components/SymbolItem";
 
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
   includeScore: true,
   threshold: 0.4,
 });
-
 const fuseOpenMoji = new Fuse(openmojiData, {
   keys: ["annotation", "tags"],
   includeScore: true,
   threshold: 0.4,
 });
-
 const fusePicom = new Fuse(picomData, {
   keys: ["name"],
   includeScore: true,
   threshold: 0.4,
 });
-
 const fuseSclera = new Fuse(scleraData, {
   keys: ["search_term"],
   includeScore: true,
   threshold: 0.4,
 });
-
 const fuseBliss = new Fuse(blissData, {
   keys: ["name"],
   includeScore: true,
   threshold: 0.4,
 });
-
 const fuseNotoEmoji = new Fuse(notoEmojiData, {
   keys: ["search_terms"],
   includeScore: true,
@@ -69,7 +70,46 @@ export default function PickerScreen() {
   const prevWord = useDeckStore((state) => state.prevWord);
   const selectSymbol = useDeckStore((state) => state.selectSymbol);
 
-  const screenOptions = useMemo(() => ({ title: deckName }), [deckName]);
+  const handleExport = async () => {
+    if (deckData.length === 0) {
+      alert("No data to export.");
+      return;
+    }
+    const csvString = Papa.unparse(deckData);
+    const filename = `export_${Date.now()}.csv`;
+
+    if (Platform.OS === "web") {
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      const file = new File(Paths.cache, filename);
+      try {
+        await file.write(csvString);
+        if (!(await Sharing.isAvailableAsync())) {
+          alert("Sharing isn't available on your platform");
+          return;
+        }
+        await Sharing.shareAsync(file.uri);
+      } catch (error) {
+        console.error("Error exporting file:", error);
+        alert("Failed to export CSV.");
+      }
+    }
+  };
+
+  const screenOptions = useMemo(
+    () => ({
+      title: deckName,
+      headerRight: () => <Button onPress={handleExport} title="Export" />,
+    }),
+    [deckName, deckData]
+  );
 
   const currentWord = deckData[currentIndex];
 
@@ -80,7 +120,7 @@ export default function PickerScreen() {
     }
     console.log(`Searching for: "${query}"`);
 
-    // --- Start local search ---
+    // --- Local search (unchanged) ---
     const mulberryResults = fuseMulberry.search(query).slice(0, 4);
     const openMojiResults = fuseOpenMoji.search(query).slice(0, 4);
     const picomResults = fusePicom.search(query).slice(0, 4);
@@ -97,39 +137,90 @@ export default function PickerScreen() {
     if (notoEmojiResults.length > 0)
       resultsBySource["Noto Emoji"] = notoEmojiResults;
 
-    // Set local results immediately
     setSearchResults(resultsBySource);
 
-    // --- Start API search (now correctly inside the function) ---
+    // --- API search with logging ---
     setIsApiLoading(true);
     try {
-      const response = await fetch(
+      const arasaacPromise = fetch(
         `https://api.arasaac.org/api/pictograms/en/search/${encodeURIComponent(
           query
         )}`
       );
-      if (!response.ok) throw new Error("ARASAAC API request failed");
 
-      const arasaacJson = await response.json();
-      const arasaacResults = arasaacJson.slice(0, 4).map((result) => ({
-        item: {
-          id: result._id,
-          name: result.keywords?.[0]?.keyword || "untitled",
-          imageUrl: `https://api.arasaac.org/api/pictograms/${result._id}`,
-        },
-        score: 0,
-        refIndex: result._id,
-      }));
+      // --- DEBUG STEP 1: Log the URL we are fetching ---
+      const globalSymbolsUrl = `https://globalsymbols.com/api/v1/labels/search?query=${encodeURIComponent(
+        query
+      )}&symbolset=aac-image-library&language=eng&language_iso_format=639-3&limit=4`;
+      console.log("Fetching Global Symbols URL:", globalSymbolsUrl);
+      const globalSymbolsPromise = fetch(globalSymbolsUrl);
 
-      if (arasaacResults.length > 0) {
+      const [arasaacResponse, globalSymbolsResponse] = await Promise.all([
+        arasaacPromise,
+        globalSymbolsPromise,
+      ]);
+
+      const newApiResults = {};
+
+      if (arasaacResponse.ok) {
+        // ARASAAC logic is unchanged
+        const arasaacJson = await arasaacResponse.json();
+        const arasaacResults = arasaacJson.slice(0, 4).map((result) => ({
+          item: {
+            id: result._id,
+            name: result.keywords?.[0]?.keyword || "untitled",
+            imageUrl: `https://api.arasaac.org/api/pictograms/${result._id}`,
+          },
+          score: 0,
+          refIndex: result._id,
+        }));
+        if (arasaacResults.length > 0) newApiResults.ARASAAC = arasaacResults;
+      }
+
+      if (globalSymbolsResponse.ok) {
+        const globalSymbolsJson = await globalSymbolsResponse.json();
+
+        // --- DEBUG STEP 2: Log the entire JSON response ---
+        console.log(
+          "Global Symbols API Response:",
+          JSON.stringify(globalSymbolsJson, null, 2)
+        );
+
+        const processedResults = globalSymbolsJson
+          .map((label) => ({
+            item: {
+              id: label.picto.id,
+              name: label.text,
+              imageUrl: label.picto.image_url,
+            },
+            score: 0,
+            refIndex: label.picto.id,
+          }))
+          .slice(0, 4);
+
+        // --- DEBUG STEP 3: Log the results after processing ---
+        console.log("Processed AAC Image Library Results:", processedResults);
+
+        if (processedResults.length > 0) {
+          newApiResults["AAC Image Library"] = processedResults;
+        }
+      } else {
+        // --- DEBUG STEP 4: Log an error if the request failed ---
+        console.error(
+          "Global Symbols API request failed with status:",
+          globalSymbolsResponse.status
+        );
+      }
+
+      if (Object.keys(newApiResults).length > 0) {
         setSearchResults((prevResults) => ({
           ...prevResults,
-          ARASAAC: arasaacResults,
+          ...newApiResults,
         }));
       }
     } catch (error) {
-      console.error("ARASAAC search error:", error);
-    } finally {     
+      console.error("API search error:", error);
+    } finally {
       setIsApiLoading(false);
     }
   };
@@ -161,7 +252,6 @@ export default function PickerScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={screenOptions} />
-      {/* Word and Search UI are unchanged */}
       <View style={styles.wordContainer}>
         <Text style={styles.statusText}>
           Word {currentIndex + 1} of {deckData.length}
@@ -184,8 +274,6 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>Refresh</Text>
         </TouchableOpacity>
       </View>
-
-      {/* --- CHANGE #3: New rendering logic for grouped results --- */}
       <ScrollView style={styles.resultsScrollView}>
         {Object.keys(searchResults).map((sourceName) => (
           <View key={sourceName} style={styles.sourceContainer}>
@@ -195,26 +283,12 @@ export default function PickerScreen() {
               renderItem={({ item }) => (
                 <SymbolItem
                   item={item.item}
-                  source={
-                    sourceName as
-                      | "Mulberry"
-                      | "OpenMoji"
-                      | "Picom"
-                      | "Sclera"
-                      | "Bliss"
-                      | "Noto Emoji"
-                  }
+                  source={sourceName as any}
                   onPress={() => {
                     let symbolName = "";
                     if (sourceName === "Mulberry")
                       symbolName = item.item["symbol-en"];
-                    else if (sourceName === "OpenMoji")
-                      symbolName = item.item.annotation;
-                    else if (
-                      ["Picom", "Sclera", "Bliss", "Noto Emoji"].includes(
-                        sourceName
-                      )
-                    ) {
+                    else {
                       symbolName = item.item.name;
                     }
                     selectSymbol(symbolName, sourceName);
@@ -229,13 +303,11 @@ export default function PickerScreen() {
         ))}
         {isApiLoading && (
           <View style={styles.sourceContainer}>
-            <Text style={styles.sourceHeader}>ARASAAC</Text>
+            <Text style={styles.sourceHeader}>API Sources</Text>
             <ActivityIndicator style={{ margin: 20 }} size="large" />
           </View>
         )}
       </ScrollView>
-
-      {/* Nav buttons are unchanged */}
       <View style={styles.navContainer}>
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
@@ -256,7 +328,6 @@ export default function PickerScreen() {
   );
 }
 
-// --- CHANGE #4: Add/update styles for new layout ---
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 10 },
   wordContainer: { width: "100%", alignItems: "center", padding: 10 },
@@ -296,7 +367,7 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   sourceContainer: {
-    marginBottom: 20, // Space between source rows
+    marginBottom: 20,
   },
   sourceHeader: {
     color: "white",
