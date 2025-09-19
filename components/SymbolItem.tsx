@@ -4,7 +4,8 @@ import { SvgXml } from "react-native-svg";
 import { mulberrySvgData } from "../assets/mulberrySvgData.js";
 import { openmojiImages } from "../assets/openmojiImages.js";
 import { picomImages } from "../assets/picomImages.js";
-import { scleraImages } from "../assets/scleraImages.js"; // 👈 Import Sclera images
+import { scleraImages } from "../assets/scleraImages.js";
+import { blissImages } from "../assets/blissImages.js"
 
 interface SymbolItemProps {
   item: any;
@@ -49,6 +50,10 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
     ) : (
       <Text style={styles.errorText}>?</Text>
     );
+  } else if (source === 'Bliss') { // 👈 Add rendering logic for Bliss
+    name = item.name;
+    const requirePath = blissImages[item.filename];
+    imageContent = requirePath ? <Image source={requirePath} style={styles.image} resizeMode="contain" /> : <Text style={styles.errorText}>?</Text>;
   }
 
   return (
