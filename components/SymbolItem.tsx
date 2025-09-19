@@ -3,11 +3,12 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { SvgXml } from "react-native-svg";
 import { mulberrySvgData } from "../assets/mulberrySvgData.js";
 import { openmojiImages } from "../assets/openmojiImages.js";
-import { picomImages } from "../assets/picomImages.js"; // 👈 Import Picom images
+import { picomImages } from "../assets/picomImages.js";
+import { scleraImages } from "../assets/scleraImages.js"; // 👈 Import Sclera images
 
 interface SymbolItemProps {
   item: any;
-  source: "Mulberry" | "OpenMoji" | "Picom"; // 👈 Add Picom to the type
+  source: "Mulberry" | "OpenMoji" | "Picom" | "Sclera"; // 👈 Add Sclera to the type
   onPress: () => void;
 }
 
@@ -32,9 +33,17 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
       <Text style={styles.errorText}>?</Text>
     );
   } else if (source === "Picom") {
-    // 👈 Add rendering logic for Picom
     name = item.name;
     const requirePath = picomImages[item.filename];
+    imageContent = requirePath ? (
+      <Image source={requirePath} style={styles.image} resizeMode="contain" />
+    ) : (
+      <Text style={styles.errorText}>?</Text>
+    );
+  } else if (source === "Sclera") {
+    // 👈 Add rendering logic for Sclera
+    name = item.name;
+    const requirePath = scleraImages[item.filename];
     imageContent = requirePath ? (
       <Image source={requirePath} style={styles.image} resizeMode="contain" />
     ) : (
