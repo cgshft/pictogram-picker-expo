@@ -6,25 +6,25 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   TextInput,
-  ScrollView,
-} from "react-native"; // 👈 Import ScrollView
+  FlatList,
+} from "react-native"; // 👈 Change ScrollView to FlatList
 import { useDeckStore } from "../state/store";
 import { Stack } from "expo-router";
-import Fuse from "fuse.js"; // 👈 Import Fuse.js
-import { mulberryData } from "../assets/mulberrySymbols.js"; // 👈 Import our new symbol data
+import Fuse from "fuse.js";
+import { mulberryData } from "../assets/mulberrySymbols.js";
+import SymbolItem from "../components/SymbolItem"; // 👈 Import our new component
 
-// --- SETUP FUSE.JS ---
-// Configure Fuse.js to search the 'symbol-en' key in our data.
 const fuse = new Fuse(mulberryData, {
   keys: ["symbol-en"],
   includeScore: true,
-  threshold: 0.4, // Adjust this for more or less fuzzy matching
+  threshold: 0.4,
 });
 
 export default function PickerScreen() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState([]); // 👈 State to hold search results
+  const [searchResults, setSearchResults] = useState([]);
 
+  // ... (state selection and other hooks are unchanged)
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
   const isLoaded = useDeckStore((state) => state.isLoaded);
@@ -32,12 +32,7 @@ export default function PickerScreen() {
   const nextWord = useDeckStore((state) => state.nextWord);
   const prevWord = useDeckStore((state) => state.prevWord);
 
-  const screenOptions = useMemo(
-    () => ({
-      title: deckName,
-    }),
-    [deckName]
-  );
+  const screenOptions = useMemo(() => ({ title: deckName }), [deckName]);
 
   const currentWord = deckData[currentIndex];
 
@@ -47,10 +42,11 @@ export default function PickerScreen() {
 
     console.log(`Searching for: "${query}"`);
     const results = fuse.search(query);
-    setSearchResults(results.slice(0, 10)); // Limit to top 10 results
+    setSearchResults(results); // Keep all results for FlatList
   };
 
   if (!isLoaded || deckData.length === 0) {
+    // ... loading indicator is unchanged
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#FFFFFF" />
@@ -63,21 +59,17 @@ export default function PickerScreen() {
 
   return (
     <View style={styles.container}>
+      {/* ... Word display and Search UI are unchanged ... */}
       <Stack.Screen options={screenOptions} />
 
       <View style={styles.wordContainer}>
-        {/* ... Word display UI is unchanged ... */}
         <Text style={styles.statusText}>
           Word {currentIndex + 1} of {deckData.length}
         </Text>
         <Text style={styles.wordText}>{currentWord?.english || "N/A"}</Text>
-        <Text style={styles.infoText}>
-          (Symbol assigned: {currentWord?.symbol_filename ? "Yes" : "No"})
-        </Text>
       </View>
 
       <View style={styles.searchContainer}>
-        {/* ... Search input UI is unchanged ... */}
         <TextInput
           style={styles.searchInput}
           placeholder="Custom Search..."
@@ -87,21 +79,18 @@ export default function PickerScreen() {
           onSubmitEditing={handleSearch}
         />
         <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-          <Text style={styles.navButtonText}>Refresh Search</Text>
+          <Text style={styles.navButtonText}>Refresh</Text>
         </TouchableOpacity>
       </View>
 
-      {/* --- DISPLAY SEARCH RESULTS --- */}
-      <ScrollView style={styles.resultsContainer}>
-        {searchResults.map(({ item, score }) => (
-          <View key={item["symbol-en"]} style={styles.resultItem}>
-            <Text style={styles.resultText}>{item["symbol-en"]}</Text>
-            <Text style={styles.resultScore}>
-              Score: {Math.round((1 - score) * 100)}%
-            </Text>
-          </View>
-        ))}
-      </ScrollView>
+      {/* --- USE FLATLIST TO DISPLAY SYMBOL ITEMS --- */}
+      <FlatList
+        data={searchResults}
+        renderItem={({ item }) => <SymbolItem name={item.item["symbol-en"]} />}
+        keyExtractor={(item) => item.item["symbol-en"]}
+        numColumns={3} // Display in a grid
+        contentContainerStyle={styles.resultsContainer}
+      />
 
       <View style={styles.navContainer}>
         {/* ... Nav buttons are unchanged ... */}
@@ -110,7 +99,7 @@ export default function PickerScreen() {
           onPress={prevWord}
           disabled={isAtStart}
         >
-          <Text style={styles.navButtonText}>{"<< Previous"}</Text>
+          <Text style={styles.navButtonText}>{"<< Prev"}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.navButton, isAtEnd && styles.disabledButton]}
@@ -126,39 +115,20 @@ export default function PickerScreen() {
 
 const styles = StyleSheet.create({
   // ... most styles are unchanged ...
-  container: {
-    flex: 1,
-    justifyContent: "flex-start",
-    alignItems: "center",
-    padding: 10,
-  },
-  wordContainer: {
-    width: "100%",
-    alignItems: "center",
-    padding: 10,
-    marginBottom: 10,
-  },
-  statusText: {
-    color: "gray",
-    fontSize: 18,
-    marginBottom: 10,
-  },
+  container: { flex: 1, padding: 10 },
+  wordContainer: { width: "100%", alignItems: "center", padding: 10 },
+  statusText: { color: "gray", fontSize: 18, marginBottom: 10 },
   wordText: {
     color: "white",
     fontSize: 32,
     fontWeight: "bold",
     textAlign: "center",
   },
-  infoText: {
-    color: "cyan",
-    fontSize: 14,
-    marginTop: 8,
-  },
   searchContainer: {
     flexDirection: "row",
     width: "100%",
     paddingHorizontal: 10,
-    marginBottom: 10,
+    marginVertical: 10,
   },
   searchInput: {
     flex: 1,
@@ -177,36 +147,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: "center",
   },
+  // Changed resultsContainer to be a contentContainerStyle for FlatList
   resultsContainer: {
-    flex: 1,
-    width: "100%",
-    borderColor: "#333",
-    borderWidth: 1,
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  // --- NEW STYLES for the results list ---
-  resultItem: {
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
-    flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-  },
-  resultText: {
-    color: "white",
-    fontSize: 16,
-  },
-  resultScore: {
-    color: "gray",
-    fontSize: 12,
   },
   navContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     width: "100%",
-    paddingHorizontal: 10,
     paddingTop: 10,
     borderTopColor: "#333",
     borderTopWidth: 1,
@@ -219,12 +167,6 @@ const styles = StyleSheet.create({
     minWidth: 120,
     alignItems: "center",
   },
-  disabledButton: {
-    backgroundColor: "#444444",
-  },
-  navButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  disabledButton: { backgroundColor: "#444444" },
+  navButtonText: { color: "white", fontSize: 16, fontWeight: "600" },
 });
