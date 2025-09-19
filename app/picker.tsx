@@ -1,5 +1,4 @@
 import React, { useMemo, useState, useEffect } from "react";
-// --- FIX: Import Platform ---
 import {
   View,
   Text,
@@ -8,37 +7,38 @@ import {
   TouchableOpacity,
   TextInput,
   FlatList,
-  Button,
-  Platform,
+  ScrollView,
 } from "react-native";
 import { useDeckStore } from "../state/store";
 import { Stack } from "expo-router";
 import Fuse from "fuse.js";
-import * as Sharing from "expo-sharing";
-import { File, Paths } from "expo-file-system";
-import Papa from "papaparse";
-
 import { mulberryData } from "../assets/mulberrySymbols.js";
-import SymbolItem from "../components/SymbolItem";
 import { openmojiData } from "../assets/openmojiSymbols.js";
+import SymbolItem from "../components/SymbolItem";
+import { picomData } from "../assets/picomSymbols.js";
 
-// --- SETUP FUSE.JS for Mulberry ---
 const fuseMulberry = new Fuse(mulberryData, {
-  keys: ['symbol-en'],
+  keys: ["symbol-en"],
   includeScore: true,
   threshold: 0.4,
 });
 
-// --- SETUP FUSE.JS for OpenMoji ---
 const fuseOpenMoji = new Fuse(openmojiData, {
-  keys: ['annotation', 'tags'], // Search in both annotation and tags
+  keys: ["annotation", "tags"],
+  includeScore: true,
+  threshold: 0.4,
+});
+
+const fusePicom = new Fuse(picomData, {
+  keys: ["name"],
   includeScore: true,
   threshold: 0.4,
 });
 
 export default function PickerScreen() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
+  // --- CHANGE #1: The state will now be an object, not an array ---
+  const [searchResults, setSearchResults] = useState({});
 
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
@@ -48,75 +48,28 @@ export default function PickerScreen() {
   const prevWord = useDeckStore((state) => state.prevWord);
   const selectSymbol = useDeckStore((state) => state.selectSymbol);
 
-  const handleExport = async () => {
-    if (deckData.length === 0) {
-      alert("No data to export.");
-      return;
-    }
-    const csvString = Papa.unparse(deckData);
-    const filename = `export_${Date.now()}.csv`;
+  const screenOptions = useMemo(() => ({ title: deckName }), [deckName]);
 
-    // --- FIX: Add platform-specific logic ---
-    if (Platform.OS === "web") {
-      // Web-specific download logic
-      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } else {
-      // Mobile-specific sharing logic (our existing code)
-      const file = new File(Paths.cache, filename);
-      try {
-        await file.write(csvString);
-        if (!(await Sharing.isAvailableAsync())) {
-          alert("Sharing isn't available on your platform");
-          return;
-        }
-        await Sharing.shareAsync(file.uri);
-      } catch (error) {
-        console.error("Error exporting file:", error);
-        alert("Failed to export CSV.");
-      }
-    }
-  };
-
-  const screenOptions = useMemo(
-    () => ({
-      title: deckName,
-      headerRight: () => <Button onPress={handleExport} title="Export" />,
-    }),
-    [deckName, deckData]
-  );
-
-  // ... (the rest of the component is unchanged)
   const currentWord = deckData[currentIndex];
 
+  // --- CHANGE #2: Update search logic to group results by source ---
   const performSearch = (query: string) => {
     if (!query) {
-      setSearchResults([]);
+      setSearchResults({});
       return;
     }
     console.log(`Searching for: "${query}"`);
 
-    // Search both sources
-    const mulberryResults = fuseMulberry.search(query);
-    const openMojiResults = fuseOpenMoji.search(query);
+    const mulberryResults = fuseMulberry.search(query).slice(0, 4);
+    const openMojiResults = fuseOpenMoji.search(query).slice(0, 4);
+    const picomResults = fusePicom.search(query).slice(0, 4); // 👈 Search Picom
 
-    // Add a 'source' property to each result and combine them
-    const combinedResults = [
-      ...mulberryResults
-        .slice(0, 4)
-        .map((res) => ({ ...res, source: "Mulberry" })),
-      ...openMojiResults
-        .slice(0, 4)
-        .map((res) => ({ ...res, source: "OpenMoji" })),
-    ];
+    const resultsBySource = {};
+    if (mulberryResults.length > 0) resultsBySource.Mulberry = mulberryResults;
+    if (openMojiResults.length > 0) resultsBySource.OpenMoji = openMojiResults;
+    if (picomResults.length > 0) resultsBySource.Picom = picomResults; // 👈 Add Picom results
 
-    setSearchResults(combinedResults);
+    setSearchResults(resultsBySource);
   };
 
   useEffect(() => {
@@ -146,6 +99,7 @@ export default function PickerScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={screenOptions} />
+      {/* Word and Search UI are unchanged */}
       <View style={styles.wordContainer}>
         <Text style={styles.statusText}>
           Word {currentIndex + 1} of {deckData.length}
@@ -168,28 +122,46 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>Refresh</Text>
         </TouchableOpacity>
       </View>
-      <FlatList
-        data={searchResults}
-        renderItem={({ item }) => (
-          <SymbolItem
-            item={item.item}
-            source={item.source}
-            onPress={() =>
-              selectSymbol(
-                item.source === "Mulberry"
-                  ? item.item["symbol-en"]
-                  : item.item.annotation,
-                item.source
-              )
-            }
-          />
-        )}
-        keyExtractor={(item) =>
-          `${item.source}-${item.item.hexcode || item.item["symbol-en"]}`
-        }
-        numColumns={3}
-        contentContainerStyle={styles.resultsContainer}
-      />
+
+      {/* --- CHANGE #3: New rendering logic for grouped results --- */}
+      <ScrollView style={styles.resultsScrollView}>
+        {Object.keys(searchResults).map((sourceName) => (
+          <View key={sourceName} style={styles.sourceContainer}>
+            <Text style={styles.sourceHeader}>{sourceName}</Text>
+            <FlatList
+              data={searchResults[sourceName]}
+              renderItem={({ item }) => (
+                <SymbolItem
+                  item={item.item}
+                  source={sourceName as "Mulberry" | "OpenMoji" | "Picom"} // 👈 Add Picom to type
+                  onPress={() => {
+                    let symbolName = ""; // 👈 Determine symbol name based on source
+                    if (sourceName === "Mulberry")
+                      symbolName = item.item["symbol-en"];
+                    else if (sourceName === "OpenMoji")
+                      symbolName = item.item.annotation;
+                    else if (sourceName === "Picom")
+                      symbolName = item.item.name;
+                    selectSymbol(symbolName, sourceName);
+                  }}
+                />
+              )}
+              // 👈 Update the keyExtractor to be more robust
+              keyExtractor={(item) =>
+                `${sourceName}-${
+                  item.item.hexcode ||
+                  item.item.filename ||
+                  item.item["symbol-en"]
+                }`
+              }
+              horizontal={true}
+              showsHorizontalScrollIndicator={false}
+            />
+          </View>
+        ))}
+      </ScrollView>
+
+      {/* Nav buttons are unchanged */}
       <View style={styles.navContainer}>
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
@@ -210,7 +182,7 @@ export default function PickerScreen() {
   );
 }
 
-// ... styles are unchanged
+// --- CHANGE #4: Add/update styles for new layout ---
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 10 },
   wordContainer: { width: "100%", alignItems: "center", padding: 10 },
@@ -245,7 +217,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: "center",
   },
-  resultsContainer: { alignItems: "center" },
+  resultsScrollView: {
+    flex: 1,
+    width: "100%",
+  },
+  sourceContainer: {
+    marginBottom: 20, // Space between source rows
+  },
+  sourceHeader: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "bold",
+    marginLeft: 15,
+    marginBottom: 5,
+  },
   navContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
