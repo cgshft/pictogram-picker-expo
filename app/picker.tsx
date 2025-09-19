@@ -20,9 +20,18 @@ import Papa from "papaparse";
 
 import { mulberryData } from "../assets/mulberrySymbols.js";
 import SymbolItem from "../components/SymbolItem";
+import { openmojiData } from "../assets/openmojiSymbols.js";
 
-const fuse = new Fuse(mulberryData, {
-  keys: ["symbol-en"],
+// --- SETUP FUSE.JS for Mulberry ---
+const fuseMulberry = new Fuse(mulberryData, {
+  keys: ['symbol-en'],
+  includeScore: true,
+  threshold: 0.4,
+});
+
+// --- SETUP FUSE.JS for OpenMoji ---
+const fuseOpenMoji = new Fuse(openmojiData, {
+  keys: ['annotation', 'tags'], // Search in both annotation and tags
   includeScore: true,
   threshold: 0.4,
 });
@@ -91,8 +100,23 @@ export default function PickerScreen() {
       setSearchResults([]);
       return;
     }
-    const results = fuse.search(query);
-    setSearchResults(results.slice(0, 4));
+    console.log(`Searching for: "${query}"`);
+
+    // Search both sources
+    const mulberryResults = fuseMulberry.search(query);
+    const openMojiResults = fuseOpenMoji.search(query);
+
+    // Add a 'source' property to each result and combine them
+    const combinedResults = [
+      ...mulberryResults
+        .slice(0, 4)
+        .map((res) => ({ ...res, source: "Mulberry" })),
+      ...openMojiResults
+        .slice(0, 4)
+        .map((res) => ({ ...res, source: "OpenMoji" })),
+    ];
+
+    setSearchResults(combinedResults);
   };
 
   useEffect(() => {
@@ -148,11 +172,21 @@ export default function PickerScreen() {
         data={searchResults}
         renderItem={({ item }) => (
           <SymbolItem
-            name={item.item["symbol-en"]}
-            onPress={() => selectSymbol(item.item["symbol-en"], "Mulberry")}
+            item={item.item}
+            source={item.source}
+            onPress={() =>
+              selectSymbol(
+                item.source === "Mulberry"
+                  ? item.item["symbol-en"]
+                  : item.item.annotation,
+                item.source
+              )
+            }
           />
         )}
-        keyExtractor={(item) => item.item["symbol-en"]}
+        keyExtractor={(item) =>
+          `${item.source}-${item.item.hexcode || item.item["symbol-en"]}`
+        }
         numColumns={3}
         contentContainerStyle={styles.resultsContainer}
       />
@@ -231,4 +265,3 @@ const styles = StyleSheet.create({
   disabledButton: { backgroundColor: "#444444" },
   navButtonText: { color: "white", fontSize: 16, fontWeight: "600" },
 });
-  
