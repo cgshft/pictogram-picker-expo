@@ -1,26 +1,30 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native"; // 👈 Import TouchableOpacity
 import { SvgXml } from "react-native-svg";
-// Import the pre-processed SVG data
 import { mulberrySvgData } from "../assets/mulberrySvgData.js";
 
-export default function SymbolItem({ name }: { name: string }) {
-  // Sanitize the name to match the keys in our data object
+// The component now accepts an onPress function
+interface SymbolItemProps {
+  name: string;
+  onPress: () => void;
+}
+
+export default function SymbolItem({ name, onPress }: SymbolItemProps) {
   const sanitizedName = name.replace(/,/g, "");
-  // Get the SVG content directly from the imported object
   const svgContent = mulberrySvgData[sanitizedName];
 
   return (
-    <View style={styles.container}>
+    // Wrap the entire component in a TouchableOpacity
+    <TouchableOpacity style={styles.container} onPress={onPress}>
       {svgContent ? (
         <SvgXml xml={svgContent} width="80%" height="80%" />
       ) : (
-        <Text style={styles.errorText}>?</Text> // Show ? if not found
+        <Text style={styles.errorText}>?</Text>
       )}
       <Text style={styles.text} numberOfLines={1} ellipsizeMode="tail">
         {name}
       </Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -34,6 +38,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#2C2C2E",
     borderRadius: 8,
+    borderWidth: 1, // Add a border
+    borderColor: "#444", // Border color
   },
   text: {
     color: "#E5E5EA",

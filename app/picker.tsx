@@ -7,12 +7,12 @@ import {
   TouchableOpacity,
   TextInput,
   FlatList,
-} from "react-native"; // 👈 Change ScrollView to FlatList
+} from "react-native";
 import { useDeckStore } from "../state/store";
 import { Stack } from "expo-router";
 import Fuse from "fuse.js";
 import { mulberryData } from "../assets/mulberrySymbols.js";
-import SymbolItem from "../components/SymbolItem"; // 👈 Import our new component
+import SymbolItem from "../components/SymbolItem";
 
 const fuse = new Fuse(mulberryData, {
   keys: ["symbol-en"],
@@ -24,13 +24,13 @@ export default function PickerScreen() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
 
-  // ... (state selection and other hooks are unchanged)
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
   const isLoaded = useDeckStore((state) => state.isLoaded);
   const deckName = useDeckStore((state) => state.deckName);
   const nextWord = useDeckStore((state) => state.nextWord);
   const prevWord = useDeckStore((state) => state.prevWord);
+  const selectSymbol = useDeckStore((state) => state.selectSymbol); // 👈 Get the new action
 
   const screenOptions = useMemo(() => ({ title: deckName }), [deckName]);
 
@@ -40,13 +40,11 @@ export default function PickerScreen() {
     const query = searchTerm.trim() || currentWord?.english || "";
     if (!query) return;
 
-    console.log(`Searching for: "${query}"`);
     const results = fuse.search(query);
-    setSearchResults(results); // Keep all results for FlatList
+    setSearchResults(results);
   };
 
   if (!isLoaded || deckData.length === 0) {
-    // ... loading indicator is unchanged
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#FFFFFF" />
@@ -59,7 +57,6 @@ export default function PickerScreen() {
 
   return (
     <View style={styles.container}>
-      {/* ... Word display and Search UI are unchanged ... */}
       <Stack.Screen options={screenOptions} />
 
       <View style={styles.wordContainer}>
@@ -67,6 +64,10 @@ export default function PickerScreen() {
           Word {currentIndex + 1} of {deckData.length}
         </Text>
         <Text style={styles.wordText}>{currentWord?.english || "N/A"}</Text>
+        {/* Now we can see when a symbol is assigned! */}
+        <Text style={styles.infoText}>
+          Symbol: {currentWord?.symbol_name || "None"}
+        </Text>
       </View>
 
       <View style={styles.searchContainer}>
@@ -83,17 +84,21 @@ export default function PickerScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* --- USE FLATLIST TO DISPLAY SYMBOL ITEMS --- */}
       <FlatList
         data={searchResults}
-        renderItem={({ item }) => <SymbolItem name={item.item["symbol-en"]} />}
+        renderItem={({ item }) => (
+          <SymbolItem
+            name={item.item["symbol-en"]}
+            // Call the selectSymbol action when an item is pressed
+            onPress={() => selectSymbol(item.item["symbol-en"], "Mulberry")}
+          />
+        )}
         keyExtractor={(item) => item.item["symbol-en"]}
-        numColumns={3} // Display in a grid
+        numColumns={3}
         contentContainerStyle={styles.resultsContainer}
       />
 
       <View style={styles.navContainer}>
-        {/* ... Nav buttons are unchanged ... */}
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
           onPress={prevWord}
@@ -113,8 +118,8 @@ export default function PickerScreen() {
   );
 }
 
+// ... styles are unchanged
 const styles = StyleSheet.create({
-  // ... most styles are unchanged ...
   container: { flex: 1, padding: 10 },
   wordContainer: { width: "100%", alignItems: "center", padding: 10 },
   statusText: { color: "gray", fontSize: 18, marginBottom: 10 },
@@ -124,6 +129,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center",
   },
+  infoText: { color: "cyan", fontSize: 16, marginTop: 8, fontStyle: "italic" },
   searchContainer: {
     flexDirection: "row",
     width: "100%",
@@ -147,10 +153,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: "center",
   },
-  // Changed resultsContainer to be a contentContainerStyle for FlatList
-  resultsContainer: {
-    alignItems: "center",
-  },
+  resultsContainer: { alignItems: "center" },
   navContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
