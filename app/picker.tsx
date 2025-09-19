@@ -16,6 +16,7 @@ import { mulberryData } from "../assets/mulberrySymbols.js";
 import { openmojiData } from "../assets/openmojiSymbols.js";
 import SymbolItem from "../components/SymbolItem";
 import { picomData } from "../assets/picomSymbols.js";
+import { scleraData } from "../assets/scleraSymbols.js";
 
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
@@ -31,6 +32,12 @@ const fuseOpenMoji = new Fuse(openmojiData, {
 
 const fusePicom = new Fuse(picomData, {
   keys: ["name"],
+  includeScore: true,
+  threshold: 0.4,
+});
+
+const fuseSclera = new Fuse(scleraData, {
+  keys: ["search_term"],
   includeScore: true,
   threshold: 0.4,
 });
@@ -63,11 +70,13 @@ export default function PickerScreen() {
     const mulberryResults = fuseMulberry.search(query).slice(0, 4);
     const openMojiResults = fuseOpenMoji.search(query).slice(0, 4);
     const picomResults = fusePicom.search(query).slice(0, 4); // 👈 Search Picom
+    const scleraResults = fuseSclera.search(query).slice(0, 4); // 👈 Search Sclera
 
     const resultsBySource = {};
     if (mulberryResults.length > 0) resultsBySource.Mulberry = mulberryResults;
     if (openMojiResults.length > 0) resultsBySource.OpenMoji = openMojiResults;
-    if (picomResults.length > 0) resultsBySource.Picom = picomResults; // 👈 Add Picom results
+    if (picomResults.length > 0) resultsBySource.Picom = picomResults; 
+    if (scleraResults.length > 0) resultsBySource.Sclera = scleraResults;
 
     setSearchResults(resultsBySource);
   };
@@ -141,6 +150,8 @@ export default function PickerScreen() {
                     else if (sourceName === "OpenMoji")
                       symbolName = item.item.annotation;
                     else if (sourceName === "Picom")
+                      symbolName = item.item.name;
+                    else if (sourceName === "Sclera")
                       symbolName = item.item.name;
                     selectSymbol(symbolName, sourceName);
                   }}

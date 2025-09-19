@@ -15,6 +15,13 @@ const sources = [
     outputFile: path.join(__dirname, 'assets', 'picomImages.js'),
     requirePathPrefix: '../assets/picom-symbols/picom-og-symbols/',
     outputVarName: 'picomImages',
+  },
+  {
+    name: 'Sclera',
+    imageDir: path.join(__dirname, 'assets', 'sclera-symbols'),
+    outputFile: path.join(__dirname, 'assets', 'scleraImages.js'),
+    requirePathPrefix: '../assets/sclera-symbols/',
+    outputVarName: 'scleraImages',
   }
 ];
 
