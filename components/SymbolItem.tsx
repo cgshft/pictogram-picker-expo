@@ -6,11 +6,12 @@ import { openmojiImages } from "../assets/openmojiImages.js";
 import { picomImages } from "../assets/picomImages.js";
 import { scleraImages } from "../assets/scleraImages.js";
 import { blissImages } from "../assets/blissImages.js"
-import { notoEmojiImages } from "../assets/notoEmojiImages.js"; // 👈 Import Noto Emoji images
+import { notoEmojiImages } from "../assets/notoEmojiImages.js";
+import { arasaacImages } from "../assets/arasaacImages.js";
 
 interface SymbolItemProps {
   item: any;
-  source: "Mulberry" | "OpenMoji" | "Picom" | "Sclera" | "Bliss" | "Noto Emoji"; // 👈 Add Noto Emoji
+  source: "Mulberry" | "OpenMoji" | "Picom" | "Sclera" | "Bliss" | "Noto Emoji" | 'ARASAAC';
   onPress: () => void;
 }
 
@@ -51,14 +52,33 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
     ) : (
       <Text style={styles.errorText}>?</Text>
     );
-  } else if (source === 'Bliss') {
+  } else if (source === "Bliss") {
     name = item.name;
     const requirePath = blissImages[item.filename];
-    imageContent = requirePath ? <Image source={requirePath} style={styles.image} resizeMode="contain" /> : <Text style={styles.errorText}>?</Text>;
-  } else if (source === 'Noto Emoji') { 
+    imageContent = requirePath ? (
+      <Image source={requirePath} style={styles.image} resizeMode="contain" />
+    ) : (
+      <Text style={styles.errorText}>?</Text>
+    );
+  } else if (source === "Noto Emoji") {
     name = item.name;
     const requirePath = notoEmojiImages[item.filename];
-    imageContent = requirePath ? <Image source={requirePath} style={styles.image} resizeMode="contain" /> : <Text style={styles.errorText}>?</Text>;
+    imageContent = requirePath ? (
+      <Image source={requirePath} style={styles.image} resizeMode="contain" />
+    ) : (
+      <Text style={styles.errorText}>?</Text>
+    );
+  } else if (source === "ARASAAC") {
+    name = item.name;
+    imageContent = item.imageUrl ? (
+      <Image
+        source={{ uri: item.imageUrl }}
+        style={styles.image}
+        resizeMode="contain"
+      />
+    ) : (
+      <Text style={styles.errorText}>?</Text>
+    );
   }
 
   return (

@@ -58,8 +58,8 @@ const fuseNotoEmoji = new Fuse(notoEmojiData, {
 
 export default function PickerScreen() {
   const [searchTerm, setSearchTerm] = useState("");
-  // --- CHANGE #1: The state will now be an object, not an array ---
   const [searchResults, setSearchResults] = useState({});
+  const [isApiLoading, setIsApiLoading] = useState(false);
 
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
@@ -73,14 +73,14 @@ export default function PickerScreen() {
 
   const currentWord = deckData[currentIndex];
 
-  // --- CHANGE #2: Update search logic to group results by source ---
-  const performSearch = (query: string) => {
+  const performSearch = async (query: string) => {
     if (!query) {
       setSearchResults({});
       return;
     }
     console.log(`Searching for: "${query}"`);
 
+    // --- Start local search ---
     const mulberryResults = fuseMulberry.search(query).slice(0, 4);
     const openMojiResults = fuseOpenMoji.search(query).slice(0, 4);
     const picomResults = fusePicom.search(query).slice(0, 4);
@@ -91,13 +91,47 @@ export default function PickerScreen() {
     const resultsBySource = {};
     if (mulberryResults.length > 0) resultsBySource.Mulberry = mulberryResults;
     if (openMojiResults.length > 0) resultsBySource.OpenMoji = openMojiResults;
-    if (picomResults.length > 0) resultsBySource.Picom = picomResults; 
+    if (picomResults.length > 0) resultsBySource.Picom = picomResults;
     if (scleraResults.length > 0) resultsBySource.Sclera = scleraResults;
     if (blissResults.length > 0) resultsBySource.Bliss = blissResults;
     if (notoEmojiResults.length > 0)
       resultsBySource["Noto Emoji"] = notoEmojiResults;
 
+    // Set local results immediately
     setSearchResults(resultsBySource);
+
+    // --- Start API search (now correctly inside the function) ---
+    setIsApiLoading(true);
+    try {
+      const response = await fetch(
+        `https://api.arasaac.org/api/pictograms/en/search/${encodeURIComponent(
+          query
+        )}`
+      );
+      if (!response.ok) throw new Error("ARASAAC API request failed");
+
+      const arasaacJson = await response.json();
+      const arasaacResults = arasaacJson.slice(0, 4).map((result) => ({
+        item: {
+          id: result._id,
+          name: result.keywords?.[0]?.keyword || "untitled",
+          imageUrl: `https://api.arasaac.org/api/pictograms/${result._id}`,
+        },
+        score: 0,
+        refIndex: result._id,
+      }));
+
+      if (arasaacResults.length > 0) {
+        setSearchResults((prevResults) => ({
+          ...prevResults,
+          ARASAAC: arasaacResults,
+        }));
+      }
+    } catch (error) {
+      console.error("ARASAAC search error:", error);
+    } finally {     
+      setIsApiLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -193,6 +227,12 @@ export default function PickerScreen() {
             />
           </View>
         ))}
+        {isApiLoading && (
+          <View style={styles.sourceContainer}>
+            <Text style={styles.sourceHeader}>ARASAAC</Text>
+            <ActivityIndicator style={{ margin: 20 }} size="large" />
+          </View>
+        )}
       </ScrollView>
 
       {/* Nav buttons are unchanged */}
