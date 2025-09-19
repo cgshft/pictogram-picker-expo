@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
+// --- FIX: Import Platform ---
 import {
   View,
   Text,
@@ -8,12 +9,12 @@ import {
   TextInput,
   FlatList,
   Button,
+  Platform,
 } from "react-native";
 import { useDeckStore } from "../state/store";
 import { Stack } from "expo-router";
 import Fuse from "fuse.js";
 import * as Sharing from "expo-sharing";
-// --- FIX #1: Import 'Paths' ---
 import { File, Paths } from "expo-file-system";
 import Papa from "papaparse";
 
@@ -30,7 +31,6 @@ export default function PickerScreen() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
 
-  // --- FIX #2: Revert to individual selectors to prevent infinite loops ---
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
   const isLoaded = useDeckStore((state) => state.isLoaded);
@@ -45,22 +45,33 @@ export default function PickerScreen() {
       return;
     }
     const csvString = Papa.unparse(deckData);
+    const filename = `export_${Date.now()}.csv`;
 
-    // --- FIX #3: Use 'Paths.cache' instead of 'File.cache' ---
-    const file = new File(Paths.cache, `export_${Date.now()}.csv`);
-
-    try {
-      await file.write(csvString);
-
-      if (!(await Sharing.isAvailableAsync())) {
-        alert("Sharing isn't available on your platform");
-        return;
+    // --- FIX: Add platform-specific logic ---
+    if (Platform.OS === "web") {
+      // Web-specific download logic
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      // Mobile-specific sharing logic (our existing code)
+      const file = new File(Paths.cache, filename);
+      try {
+        await file.write(csvString);
+        if (!(await Sharing.isAvailableAsync())) {
+          alert("Sharing isn't available on your platform");
+          return;
+        }
+        await Sharing.shareAsync(file.uri);
+      } catch (error) {
+        console.error("Error exporting file:", error);
+        alert("Failed to export CSV.");
       }
-
-      await Sharing.shareAsync(file.uri);
-    } catch (error) {
-      console.error("Error exporting file:", error);
-      alert("Failed to export CSV.");
     }
   };
 
@@ -72,6 +83,7 @@ export default function PickerScreen() {
     [deckName, deckData]
   );
 
+  // ... (the rest of the component is unchanged)
   const currentWord = deckData[currentIndex];
 
   const performSearch = (query: string) => {
@@ -110,7 +122,6 @@ export default function PickerScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={screenOptions} />
-      {/* ... The rest of your JSX is unchanged ... */}
       <View style={styles.wordContainer}>
         <Text style={styles.statusText}>
           Word {currentIndex + 1} of {deckData.length}
@@ -220,3 +231,4 @@ const styles = StyleSheet.create({
   disabledButton: { backgroundColor: "#444444" },
   navButtonText: { color: "white", fontSize: 16, fontWeight: "600" },
 });
+  
