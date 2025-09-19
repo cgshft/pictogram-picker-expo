@@ -3,10 +3,11 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { SvgXml } from "react-native-svg";
 import { mulberrySvgData } from "../assets/mulberrySvgData.js";
 import { openmojiImages } from "../assets/openmojiImages.js";
+import { picomImages } from "../assets/picomImages.js"; // 👈 Import Picom images
 
 interface SymbolItemProps {
-  item: any; // The full data object for the symbol
-  source: "Mulberry" | "OpenMoji";
+  item: any;
+  source: "Mulberry" | "OpenMoji" | "Picom"; // 👈 Add Picom to the type
   onPress: () => void;
 }
 
@@ -25,6 +26,15 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
   } else if (source === "OpenMoji") {
     name = item.annotation;
     const requirePath = openmojiImages[item.hexcode];
+    imageContent = requirePath ? (
+      <Image source={requirePath} style={styles.image} resizeMode="contain" />
+    ) : (
+      <Text style={styles.errorText}>?</Text>
+    );
+  } else if (source === "Picom") {
+    // 👈 Add rendering logic for Picom
+    name = item.name;
+    const requirePath = picomImages[item.filename];
     imageContent = requirePath ? (
       <Image source={requirePath} style={styles.image} resizeMode="contain" />
     ) : (
