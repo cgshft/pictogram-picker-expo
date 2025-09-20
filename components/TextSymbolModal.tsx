@@ -29,7 +29,6 @@ export default function TextSymbolModal({
   const [base64Data, setBase64Data] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Generate a suggested name for the symbol
   useEffect(() => {
     if (text) {
       try {
@@ -46,7 +45,6 @@ export default function TextSymbolModal({
     }
   }, [text]);
 
-  // Reset loading state when the modal becomes visible with new text
   useEffect(() => {
     if (visible) {
       setIsLoading(true);
@@ -60,8 +58,6 @@ export default function TextSymbolModal({
     }
   };
 
-  // This is the HTML and JavaScript that will run inside the hidden WebView
-  // It renders the text in an SVG, draws it to a canvas, and sends the image data back
   const createHtmlContent = (character: string) => `
     <!DOCTYPE html><html>
     <head><meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
@@ -81,10 +77,14 @@ export default function TextSymbolModal({
         const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
         const url = URL.createObjectURL(svgBlob);
         img.onload = function() {
+          // --- FIX: Fill the canvas with a white background first ---
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          // --- Now draw the text on top of the white background ---
           ctx.drawImage(img, 0, 0);
           URL.revokeObjectURL(url);
           const dataUrl = canvas.toDataURL('image/png');
-          window.ReactNativeWebView.postMessage(dataUrl.split(',')[1]); // Send back raw base64
+          window.ReactNativeWebView.postMessage(dataUrl.split(',')[1]);
         };
         img.src = url;
       } catch (e) {
@@ -101,7 +101,6 @@ export default function TextSymbolModal({
       visible={visible}
       onRequestClose={onClose}
     >
-      {/* This WebView is hidden but does the image rendering */}
       {visible && (
         <WebView
           style={{ width: 0, height: 0, position: "absolute" }}
@@ -160,7 +159,7 @@ export default function TextSymbolModal({
       </View>
     </Modal>
   );
-}         
+}
 
 const styles = StyleSheet.create({
   centeredView: {
@@ -197,6 +196,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: "#555",
+    justifyContent: "center",
+    alignItems: "center",
   },
   label: {
     alignSelf: "flex-start",
