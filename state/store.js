@@ -33,12 +33,17 @@ export const useDeckStore = create((set, get) => ({
     currentIndex: Math.max(state.currentIndex - 1, 0),
   })),
 
-  selectSymbol: (symbolName, source) => {
+  selectSymbol: (symbolName, source, customFilename = null) => { // Add customFilename param
     const { deckData, currentIndex, nextWord } = get();
     const currentWord = deckData[currentIndex];
 
-    const sanitizedWord = (currentWord.english || `entry${currentIndex}`).replace(/[^a-zA-Z0-9]/g, '_');
-    const finalFilename = `${sanitizedWord}_${source}_${symbolName}.svg`;
+    // --- MODIFIED --- Use the custom filename if provided
+    let finalFilename = customFilename;
+    if (!finalFilename) {
+      const sanitizedWord = (currentWord.english || `entry${currentIndex}`).replace(/[^a-zA-Z0-9]/g, '_');
+      // Fallback for original behavior (e.g. Mulberry symbols)
+      finalFilename = `${sanitizedWord}_${source}_${symbolName}.svg`;
+    }
 
     const newData = [...deckData];
     newData[currentIndex] = {
@@ -49,8 +54,6 @@ export const useDeckStore = create((set, get) => ({
     };
     
     set({ deckData: newData });
-    
-    // Automatically move to the next word
     nextWord();
   },
   

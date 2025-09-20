@@ -1,3 +1,4 @@
+// app/picker.tsx
 import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
@@ -23,6 +24,7 @@ import {
   cacheApiResults,
   getRepositoryDirectory,
   setupRepositoryAndGetFile,
+  saveTextSymbol,
 } from "../services/cachingService";
 
 // Local Symbol Data
@@ -43,6 +45,7 @@ import { notoEmojiImages } from "../assets/notoEmojiImages.js";
 
 // Components
 import SymbolItem from "../components/SymbolItem";
+import TextSymbolModal from "../components/TextSymbolModal";
 
 // --- SETUP FUSE.JS INDEXES FOR ALL LOCAL SOURCES ---
 const fuseMulberry = new Fuse(mulberryData, {
@@ -94,6 +97,8 @@ export default function PickerScreen() {
   const nextWord = useDeckStore((state) => state.nextWord);
   const prevWord = useDeckStore((state) => state.prevWord);
   const selectSymbol = useDeckStore((state) => state.selectSymbol);
+  const [textSymbolInput, setTextSymbolInput] = useState("");
+  const [isTextModalVisible, setIsTextModalVisible] = useState(false);
 
   const currentWord = deckData[currentIndex];
 
@@ -482,6 +487,30 @@ export default function PickerScreen() {
     performSearch(query);
   };
 
+  const handleCreateTextSymbol = () => {
+    if (textSymbolInput.trim()) {
+      setIsTextModalVisible(true);
+    }
+  };
+
+  const handleSaveTextSymbol = async ({ base64Data, symbolName }) => {
+    setIsTextModalVisible(false);
+
+    const repoDir = await getRepositoryDirectory();
+    if (!repoDir) {
+      Alert.alert("Error", "Repository directory not set. Cannot save symbol.");
+      return;
+    }
+
+    // Call the correct function with the correct data
+    const savedFile = await saveTextSymbol(repoDir, base64Data, symbolName);
+
+    if (savedFile) {
+      selectSymbol(symbolName, "Custom Text", savedFile.filename);
+      setTextSymbolInput("");
+    }
+  };
+
   if (!isLoaded || deckData.length === 0) {
     return (
       <View style={styles.container}>
@@ -528,6 +557,23 @@ export default function PickerScreen() {
             <Text style={styles.navButtonText}>Flaticon</Text>
           </TouchableOpacity>
         </View>
+      </View>
+
+      <View style={styles.textSymbolContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Enter Unicode character (e.g., ∑, ✈)..."
+          placeholderTextColor="#888"
+          value={textSymbolInput}
+          onChangeText={setTextSymbolInput}
+          onSubmitEditing={handleCreateTextSymbol}
+        />
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={handleCreateTextSymbol}
+        >
+          <Text style={styles.navButtonText}>Create</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.resultsScrollView}>
@@ -597,6 +643,13 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>{"Next >>"}</Text>
         </TouchableOpacity>
       </View>
+
+      <TextSymbolModal 
+        visible={isTextModalVisible}
+        text={textSymbolInput}
+        onClose={() => setIsTextModalVisible(false)}
+        onSave={handleSaveTextSymbol}
+      />
     </View>
   );
 }
@@ -675,4 +728,18 @@ const styles = StyleSheet.create({
   },
   disabledButton: { backgroundColor: "#444444" },
   navButtonText: { color: "white", fontSize: 16, fontWeight: "600" },
+  textSymbolContainer: {
+    flexDirection: "row",
+    width: "100%",
+    paddingHorizontal: 10,
+    marginBottom: 10, // Add some space below it
+    alignItems: "center",
+  },
+  createButton: {
+    backgroundColor: "#34C759", // Green color
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    justifyContent: "center",
+  },
 });
