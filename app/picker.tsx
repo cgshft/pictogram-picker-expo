@@ -17,15 +17,33 @@ import Fuse from "fuse.js";
 import * as Sharing from "expo-sharing";
 import { File, Paths } from "expo-file-system";
 import Papa from "papaparse";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  cacheApiResults,
+  getRepositoryDirectory,
+  setupRepositoryAndGetFile,
+} from "../services/cachingService";
 
+// Local Symbol Data
 import { mulberryData } from "../assets/mulberrySymbols.js";
 import { openmojiData } from "../assets/openmojiSymbols.js";
 import { picomData } from "../assets/picomSymbols.js";
 import { scleraData } from "../assets/scleraSymbols.js";
 import { blissData } from "../assets/blissSymbols.js";
 import { notoEmojiData } from "../assets/notoEmojiSymbols.js";
+
+// Local Symbol Image Data (for web downloads)
+import { mulberrySvgData } from "../assets/mulberrySvgData.js";
+import { openmojiImages } from "../assets/openmojiImages.js";
+import { picomImages } from "../assets/picomImages.js";
+import { scleraImages } from "../assets/scleraImages.js";
+import { blissImages } from "../assets/blissImages.js";
+import { notoEmojiImages } from "../assets/notoEmojiImages.js";
+
+// Components
 import SymbolItem from "../components/SymbolItem";
 
+// --- SETUP FUSE.JS INDEXES FOR ALL LOCAL SOURCES ---
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
   includeScore: true,
@@ -103,13 +121,115 @@ export default function PickerScreen() {
     }
   };
 
+  const handleExportMetadata = async () => {
+    if (Platform.OS === "web") {
+      alert("Metadata export is a mobile-only feature.");
+      return;
+    }
+    try {
+      const repoDir = await getRepositoryDirectory();
+      if (!repoDir) {
+        return;
+      }
+
+      // Use .list() to find the file safely
+      const contents = await repoDir.list();
+      const metadataFile = contents.find(
+        (item) =>
+          item.name === "api_symbol_metadata.csv" && item instanceof File
+      );
+
+      if (!metadataFile) {
+        alert("Metadata log not found. No API symbols have been cached yet.");
+        return;
+      }
+
+      await Sharing.shareAsync(metadataFile.uri, {
+        mimeType: "text/csv",
+        dialogTitle: "Export your symbol metadata log",
+      });
+    } catch (error) {
+      console.error("Error exporting metadata file:", error);
+      alert("Failed to export metadata CSV.");
+    }
+  };
+
   const screenOptions = useMemo(
     () => ({
       title: deckName,
-      headerRight: () => <Button onPress={handleExport} title="Export" />,
+      headerRight: () => (
+        <View style={{ flexDirection: "row" }}>
+          <Button onPress={handleExport} title="Export Deck" />
+          <View style={{ width: 10 }} />
+          <Button onPress={handleExportMetadata} title="Export Log" />
+        </View>
+      ),
     }),
     [deckName, deckData]
   );
+
+  const handleSymbolPress = async (item, sourceName) => {
+    let symbolName = "";
+    if (sourceName === "Mulberry") {
+      symbolName = item["symbol-en"];
+    } else {
+      symbolName = item.name;
+    }
+
+    selectSymbol(symbolName, sourceName);
+
+    if (Platform.OS === "web") {
+      try {
+        let fileUrl, fileBlob, filename;
+
+        if (sourceName === "ARASAAC" || sourceName === "AAC Image Library") {
+          fileUrl = item.imageUrl;
+          const response = await fetch(fileUrl);
+          fileBlob = await response.blob();
+          filename = `${symbolName.replace(/ /g, "_")}.${fileUrl
+            .split(".")
+            .pop()}`;
+        } else if (sourceName === "Mulberry") {
+          const sanitizedName = symbolName.replace(/,/g, "");
+          const svgContent = mulberrySvgData[sanitizedName];
+          fileBlob = new Blob([svgContent], { type: "image/svg+xml" });
+          filename = `${sanitizedName}.svg`;
+        } else {
+          // For all local PNG sources
+          let requirePath;
+          if (sourceName === "OpenMoji")
+            requirePath = openmojiImages[item.hexcode];
+          else if (sourceName === "Picom")
+            requirePath = picomImages[item.filename];
+          else if (sourceName === "Sclera")
+            requirePath = scleraImages[item.filename];
+          else if (sourceName === "Bliss")
+            requirePath = blissImages[item.filename];
+          else if (sourceName === "Noto Emoji")
+            requirePath = notoEmojiImages[item.filename];
+
+          if (requirePath) {
+            const response = await fetch(requirePath);
+            fileBlob = await response.blob();
+            filename = `${symbolName.replace(/ /g, "_")}.png`;
+          }
+        }
+
+        if (fileBlob && filename) {
+          const url = URL.createObjectURL(fileBlob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.setAttribute("download", filename);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }
+      } catch (error) {
+        console.error("Failed to download symbol on web:", error);
+      }
+    }
+  };
 
   const currentWord = deckData[currentIndex];
 
@@ -118,9 +238,10 @@ export default function PickerScreen() {
       setSearchResults({});
       return;
     }
+    console.log(`---- NEW SEARCH ----`);
     console.log(`Searching for: "${query}"`);
 
-    // --- Local search (unchanged) ---
+    // Local search logic
     const mulberryResults = fuseMulberry.search(query).slice(0, 4);
     const openMojiResults = fuseOpenMoji.search(query).slice(0, 4);
     const picomResults = fusePicom.search(query).slice(0, 4);
@@ -139,21 +260,30 @@ export default function PickerScreen() {
 
     setSearchResults(resultsBySource);
 
-    // --- API search with logging ---
+    // API search logic
     setIsApiLoading(true);
     try {
+      const repoDir = await getRepositoryDirectory();
+      const metadataFile = repoDir
+        ? await setupRepositoryAndGetFile(repoDir)
+        : null;
+
+      if (!repoDir || !metadataFile) {
+        console.error("Could not setup repository. Aborting cache.");
+        setIsApiLoading(false);
+        return;
+      }
+
       const arasaacPromise = fetch(
         `https://api.arasaac.org/api/pictograms/en/search/${encodeURIComponent(
           query
         )}`
       );
-
-      // --- DEBUG STEP 1: Log the URL we are fetching ---
-      const globalSymbolsUrl = `https://globalsymbols.com/api/v1/labels/search?query=${encodeURIComponent(
-        query
-      )}&symbolset=aac-image-library&language=eng&language_iso_format=639-3&limit=4`;
-      console.log("Fetching Global Symbols URL:", globalSymbolsUrl);
-      const globalSymbolsPromise = fetch(globalSymbolsUrl);
+      const globalSymbolsPromise = fetch(
+        `https://globalsymbols.com/api/v1/labels/search?query=${encodeURIComponent(
+          query
+        )}&symbolset=aac-image-library&language=eng&language_iso_format=639-3&limit=4`
+      );
 
       const [arasaacResponse, globalSymbolsResponse] = await Promise.all([
         arasaacPromise,
@@ -163,8 +293,9 @@ export default function PickerScreen() {
       const newApiResults = {};
 
       if (arasaacResponse.ok) {
-        // ARASAAC logic is unchanged
         const arasaacJson = await arasaacResponse.json();
+
+        // --- FIX IS HERE: Ensure this .map() has its function ---
         const arasaacResults = arasaacJson.slice(0, 4).map((result) => ({
           item: {
             id: result._id,
@@ -174,18 +305,23 @@ export default function PickerScreen() {
           score: 0,
           refIndex: result._id,
         }));
-        if (arasaacResults.length > 0) newApiResults.ARASAAC = arasaacResults;
+
+        if (arasaacResults.length > 0) {
+          newApiResults.ARASAAC = arasaacResults;
+          cacheApiResults(
+            arasaacResults,
+            "ARASAAC",
+            query,
+            repoDir,
+            metadataFile
+          );
+        }
       }
 
       if (globalSymbolsResponse.ok) {
         const globalSymbolsJson = await globalSymbolsResponse.json();
 
-        // --- DEBUG STEP 2: Log the entire JSON response ---
-        console.log(
-          "Global Symbols API Response:",
-          JSON.stringify(globalSymbolsJson, null, 2)
-        );
-
+        // --- And ensure this .map() also has its function ---
         const processedResults = globalSymbolsJson
           .map((label) => ({
             item: {
@@ -198,18 +334,16 @@ export default function PickerScreen() {
           }))
           .slice(0, 4);
 
-        // --- DEBUG STEP 3: Log the results after processing ---
-        console.log("Processed AAC Image Library Results:", processedResults);
-
         if (processedResults.length > 0) {
           newApiResults["AAC Image Library"] = processedResults;
+          cacheApiResults(
+            processedResults,
+            "AAC Image Library",
+            query,
+            repoDir,
+            metadataFile
+          );
         }
-      } else {
-        // --- DEBUG STEP 4: Log an error if the request failed ---
-        console.error(
-          "Global Symbols API request failed with status:",
-          globalSymbolsResponse.status
-        );
       }
 
       if (Object.keys(newApiResults).length > 0) {
@@ -252,6 +386,7 @@ export default function PickerScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={screenOptions} />
+
       <View style={styles.wordContainer}>
         <Text style={styles.statusText}>
           Word {currentIndex + 1} of {deckData.length}
@@ -261,6 +396,7 @@ export default function PickerScreen() {
           Symbol: {currentWord?.symbol_name || "None"}
         </Text>
       </View>
+
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.searchInput}
@@ -274,6 +410,7 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>Refresh</Text>
         </TouchableOpacity>
       </View>
+
       <ScrollView style={styles.resultsScrollView}>
         {Object.keys(searchResults).map((sourceName) => (
           <View key={sourceName} style={styles.sourceContainer}>
@@ -284,15 +421,7 @@ export default function PickerScreen() {
                 <SymbolItem
                   item={item.item}
                   source={sourceName as any}
-                  onPress={() => {
-                    let symbolName = "";
-                    if (sourceName === "Mulberry")
-                      symbolName = item.item["symbol-en"];
-                    else {
-                      symbolName = item.item.name;
-                    }
-                    selectSymbol(symbolName, sourceName);
-                  }}
+                  onPress={() => handleSymbolPress(item.item, sourceName)}
                 />
               )}
               keyExtractor={(item) => `${sourceName}-${item.refIndex}`}
@@ -308,6 +437,7 @@ export default function PickerScreen() {
           </View>
         )}
       </ScrollView>
+
       <View style={styles.navContainer}>
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
