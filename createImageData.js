@@ -4,6 +4,13 @@ const path = require('path');
 
 const sources = [
   {
+    name: 'Mulberry',
+    imageDir: path.join(__dirname, 'assets', 'mulberry-symbols', 'EN-symbols'),
+    outputFile: path.join(__dirname, 'assets', 'mulberryImages.js'),
+    requirePathPrefix: '../assets/mulberry-symbols/EN-symbols/',
+    outputVarName: 'mulberryImages',
+  },
+  {
     name: 'OpenMoji',
     imageDir: path.join(__dirname, 'assets', 'openmoji-618x618-color', 'emojis'),
     outputFile: path.join(__dirname, 'assets', 'openmojiImages.js'),
@@ -45,12 +52,11 @@ sources.forEach(source => {
   try {
     const imageFiles = fs.readdirSync(source.imageDir).filter(file => file.endsWith('.png'));
     let fileContent = `export const ${source.outputVarName} = {\n`;
-    
+
     for (const file of imageFiles) {
       const name = path.basename(file, '.png');
       const requirePath = `${source.requirePathPrefix}${file}`;
-      
-      // Use JSON.stringify on BOTH the key and the require path
+
       fileContent += `  ${JSON.stringify(name)}: require(${JSON.stringify(requirePath)}),\n`;
     }
 
