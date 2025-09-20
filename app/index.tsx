@@ -1,3 +1,4 @@
+// app/index.tsx
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -9,7 +10,6 @@ import { Asset } from 'expo-asset';
 // Import our global store
 import { useDeckStore } from '../state/store';
 
-// --- CHANGE #1: Import the asset at the top of the file ---
 // import baseVocabAsset from '../assets/en_word_diversity_ranking.csv';
 import { vocabularyData } from "../assets/vocabulary.js";
 
@@ -17,7 +17,6 @@ export default function StartScreen() {
   const router = useRouter();
   const loadDeck = useDeckStore((state) => state.loadDeck);
 
-  // ... (parseAndLoadCsv and handleLoadExisting functions are unchanged)
   const parseAndLoadCsv = (csvString, fileName) => {
     Papa.parse(csvString, {
       header: true,
@@ -54,23 +53,6 @@ export default function StartScreen() {
   };
 
 
-  // const handleStartNew = async () => {
-  //   try {
-  //     // --- CHANGE #2: Use the imported asset reference ---
-  //     const asset = Asset.fromModule(baseVocabAsset);
-  //     await asset.downloadAsync();
-
-  //     if (asset.localUri) {
-  //       const csvString = await FileSystem.readAsStringAsync(asset.localUri);
-  //       parseAndLoadCsv(csvString, 'New Deck.csv');
-  //     } else {
-  //        throw new Error('Asset could not be loaded.');
-  //     }
-  //   } catch (error) {
-  //     Alert.alert('Error', 'Could not load the base vocabulary file.');
-  //     console.error(error);
-  //   }
-  // };
   
   const handleStartNew = () => {
     // The data is already parsed and ready to use!

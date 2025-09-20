@@ -1,3 +1,4 @@
+// state/store.js
 import { create } from 'zustand';
 
 export const useDeckStore = create((set, get) => ({ // 👈 Add 'get' here
