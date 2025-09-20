@@ -3,7 +3,6 @@
 const fs = require('fs');
 const path = require('path');
 
-// --- FIX #1: Create a standalone helper function ---
 function rsplit(str, sep, maxsplit) {
   const split = str.split(sep);
   return maxsplit ? [split.slice(0, -maxsplit).join(sep)].concat(split.slice(-maxsplit)) : split;
@@ -21,7 +20,6 @@ try {
   for (const file of picomFiles) {
     const baseName = path.basename(file, '.png');
     
-    // --- FIX #2: Call the new helper function ---
     const parts = rsplit(baseName, '_', 1);
     const name = (parts.length === 2) ? parts[0] : baseName;
 
@@ -39,5 +37,3 @@ try {
 } catch (error) {
   console.error("❌ Error creating Picom data file:", error);
 }
-
-// --- FIX #3: The bad String.prototype code has been removed ---

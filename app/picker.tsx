@@ -473,7 +473,6 @@ export default function PickerScreen() {
     const repoDir = await getRepositoryDirectory();
     if (!repoDir) return;
 
-    // --- FIX: Call the new, dedicated save function ---
     const savedFile = await saveCombinedSymbol(
       repoDir,
       base64Data,

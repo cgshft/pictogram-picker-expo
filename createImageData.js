@@ -50,7 +50,6 @@ sources.forEach(source => {
       const name = path.basename(file, '.png');
       const requirePath = `${source.requirePathPrefix}${file}`;
       
-      // --- THIS IS THE FIX ---
       // Use JSON.stringify on BOTH the key and the require path
       fileContent += `  ${JSON.stringify(name)}: require(${JSON.stringify(requirePath)}),\n`;
     }
