@@ -1,3 +1,4 @@
+// components/SymbolItem.tsx
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { SvgXml } from "react-native-svg";
