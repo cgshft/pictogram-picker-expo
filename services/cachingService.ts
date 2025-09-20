@@ -146,3 +146,42 @@ export const saveTextSymbol = async (
     return null;
   }
 };
+
+export const saveCombinedSymbol = async (
+  repoDir: Directory,
+  base64Data: string,
+  symbolName: string
+): Promise<{ fileUri: string; filename: string } | null> => {
+  if (!repoDir) return null;
+
+  try {
+    // Step 1: Ensure the destination subdirectory exists
+    const repoContents = await repoDir.list();
+    let destinationDir = repoContents.find(
+      (item) => item.name === 'Combined' && item instanceof Directory
+    ) as Directory;
+    if (!destinationDir) {
+      destinationDir = await repoDir.createDirectory('Combined');
+    }
+
+    // Step 2: Create a unique filename
+    const safeName = symbolName.replace(/[^a-zA-Z0-9\s/]/g, '_').replace(/\s\/\s/g, '-');
+    const finalFilename = `${safeName}_${Date.now()}.png`;
+
+    // Step 3: Create an EMPTY placeholder file at the destination to get a valid URI
+    const finalFile = await destinationDir.createFile(finalFilename, 'image/png');
+
+    // Step 4: Write the base64 data directly to the placeholder file's URI
+    await FileSystem.writeAsStringAsync(finalFile.uri, base64Data, {
+      encoding: 'base64',
+    });
+
+    console.log(`Saved combined symbol to: ${finalFile.uri}`);
+    return { fileUri: finalFile.uri, filename: finalFilename };
+
+  } catch (e) {
+    console.error("Failed to save combined symbol:", e);
+    Alert.alert("Save Error", `Could not save the combined symbol. ${e.message}`);
+    return null;
+  }
+};
