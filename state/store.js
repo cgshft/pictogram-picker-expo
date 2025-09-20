@@ -1,7 +1,11 @@
 // state/store.js
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const useDeckStore = create((set, get) => ({ // 👈 Add 'get' here
+// Key for storing the deck state in AsyncStorage
+const DECK_STORAGE_KEY = '@CurrentDeckState';
+
+export const useDeckStore = create((set, get) => ({
   // --- State ---
   deckData: [],
   deckName: '',
@@ -11,7 +15,7 @@ export const useDeckStore = create((set, get) => ({ // 👈 Add 'get' here
   // --- Actions ---
   loadDeck: (data, name) => {
     const firstIncompleteIndex = data.findIndex(
-      row => !row.symbol_filename
+      row => !row.symbol_filename && !row.symbol_name
     );
     set({
       deckData: data,
@@ -29,29 +33,71 @@ export const useDeckStore = create((set, get) => ({ // 👈 Add 'get' here
     currentIndex: Math.max(state.currentIndex - 1, 0),
   })),
 
-  // --- NEW ACTION ---
   selectSymbol: (symbolName, source) => {
-    const { deckData, currentIndex, nextWord } = get(); // Get current state and actions
+    const { deckData, currentIndex, nextWord } = get();
     const currentWord = deckData[currentIndex];
 
-    // Create a sanitized filename, like in the Python app
     const sanitizedWord = (currentWord.english || `entry${currentIndex}`).replace(/[^a-zA-Z0-9]/g, '_');
     const finalFilename = `${sanitizedWord}_${source}_${symbolName}.svg`;
 
-    // Create a new copy of the data array to avoid direct mutation
     const newData = [...deckData];
-    // Update the object for the current word
     newData[currentIndex] = {
       ...newData[currentIndex],
       symbol_filename: finalFilename,
       symbol_name: symbolName,
       symbol_source: source,
     };
-
-    // Update the state with the modified data
+    
     set({ deckData: newData });
     
     // Automatically move to the next word
     nextWord();
   },
+  
+  // New action to restore state from AsyncStorage
+  restoreState: async () => {
+    try {
+      const jsonValue = await AsyncStorage.getItem(DECK_STORAGE_KEY);
+      if (jsonValue != null) {
+        const savedState = JSON.parse(jsonValue);
+        set({
+          deckData: savedState.deckData || [],
+          deckName: savedState.deckName || '',
+          currentIndex: savedState.currentIndex || 0,
+          isLoaded: true,
+        });
+        return true; // Indicate success
+      }
+    } catch (e) {
+      console.error("Failed to restore deck state.", e);
+    }
+    return false; // Indicate failure or no saved state
+  },
+
+  // New action to clear the saved state
+  clearSavedState: async () => {
+    try {
+      await AsyncStorage.removeItem(DECK_STORAGE_KEY);
+      console.log("Cleared saved deck state.");
+    } catch (e) {
+      console.error("Failed to clear saved deck state.", e);
+    }
+  }
 }));
+
+// --- Subscribe to state changes for persistence ---
+// This runs whenever the state changes and saves the relevant parts.
+useDeckStore.subscribe(
+  (state) => {
+    // We only save if a deck is actually loaded to avoid saving empty/initial state.
+    if (state.isLoaded && state.deckData.length > 0) {
+      const stateToSave = {
+        deckData: state.deckData,
+        deckName: state.deckName,
+        currentIndex: state.currentIndex,
+      };
+      AsyncStorage.setItem(DECK_STORAGE_KEY, JSON.stringify(stateToSave))
+        .catch(e => console.error("Failed to save deck progress.", e));
+    }
+  }
+);
