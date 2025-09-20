@@ -1,4 +1,3 @@
-// app/picker.tsx
 import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
@@ -11,6 +10,7 @@ import {
   ScrollView,
   Button,
   Platform,
+  Alert,
 } from "react-native";
 import { useDeckStore } from "../state/store";
 import { Stack } from "expo-router";
@@ -76,10 +76,16 @@ const fuseNotoEmoji = new Fuse(notoEmojiData, {
   threshold: 0.4,
 });
 
+// --- Add your Freepik/Flaticon API Key here ---
+const FLATICON_API_KEY = "FPSX1e2eb55bf996f5d3a3164f46b0cca8b8";
+
 export default function PickerScreen() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState({});
   const [isApiLoading, setIsApiLoading] = useState(false);
+
+  const [flaticonResults, setFlaticonResults] = useState([]);
+  const [isFlaticonLoading, setIsFlaticonLoading] = useState(false);
 
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
@@ -88,6 +94,112 @@ export default function PickerScreen() {
   const nextWord = useDeckStore((state) => state.nextWord);
   const prevWord = useDeckStore((state) => state.prevWord);
   const selectSymbol = useDeckStore((state) => state.selectSymbol);
+
+  const currentWord = deckData[currentIndex];
+
+  const handleFlaticonSearch = async () => {
+    if (FLATICON_API_KEY === "YOUR_API_KEY_HERE" || !FLATICON_API_KEY) {
+      Alert.alert(
+        "API Key Needed",
+        "Please add your Freepik API key to search Flaticon."
+      );
+      return;
+    }
+
+    const query = searchTerm.trim() || currentWord?.english || "";
+    if (!query) return;
+
+    setIsFlaticonLoading(true);
+    setFlaticonResults([]);
+
+    const headers = {
+      "x-freepik-api-key": FLATICON_API_KEY,
+      Accept: "application/json",
+    };
+
+    try {
+      const searchUrl = `https://api.freepik.com/v1/icons?term=${encodeURIComponent(
+        query
+      )}&limit=16&order=relevance`;
+      const searchResponse = await fetch(searchUrl, { headers });
+
+      if (!searchResponse.ok) {
+        throw new Error(
+          `Flaticon search failed: ${searchResponse.status} ${searchResponse.statusText}`
+        );
+      }
+
+      const searchJson = await searchResponse.json();
+      const iconItems = (searchJson.data || []).slice(0, 4);
+
+      if (iconItems.length === 0) {
+        setIsFlaticonLoading(false);
+        return;
+      }
+
+      const downloadUrlPromises = iconItems.map((item) => {
+        const downloadUrl = `https://api.freepik.com/v1/icons/${item.id}/download?format=png`;
+        return fetch(downloadUrl, { headers }).then((res) => res.json());
+      });
+
+      const downloadResponses = await Promise.all(downloadUrlPromises);
+
+      const processedResults = downloadResponses
+        .map((downloadRes, index) => {
+          const originalItem = iconItems[index]; // From the search result
+          const downloadData = downloadRes.data; // From the download result
+
+          console.log(
+            "Flaticon Search Item:",
+            JSON.stringify(originalItem, null, 2)
+          );
+
+          const imageUrl = downloadData?.url;
+          if (!imageUrl) return null;
+
+          // --- FIX --- Get the name by trying the description, then the filename, then a fallback.
+          const name =
+            originalItem.description || downloadData.filename || "untitled";
+
+          return {
+            item: {
+              id: originalItem.id,
+              name: name,
+              imageUrl: imageUrl,
+            },
+            score: 0,
+            refIndex: originalItem.id,
+          };
+        })
+        .filter(Boolean);
+
+      setFlaticonResults(processedResults);
+
+      if (processedResults.length > 0) {
+        const repoDir = await getRepositoryDirectory();
+        const metadataFile = repoDir
+          ? await setupRepositoryAndGetFile(repoDir)
+          : null;
+        if (repoDir && metadataFile) {
+          cacheApiResults(
+            processedResults,
+            "Flaticon",
+            query,
+            repoDir,
+            metadataFile
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Flaticon API error:", error);
+      Alert.alert(
+        "Error",
+        `Failed to fetch symbols from Flaticon: ${error.message}`
+      );
+    } finally {
+      setIsFlaticonLoading(false);
+    }
+  };
 
   const handleExport = async () => {
     if (deckData.length === 0) {
@@ -133,7 +245,6 @@ export default function PickerScreen() {
         return;
       }
 
-      // Use .list() to find the file safely
       const contents = await repoDir.list();
       const metadataFile = contents.find(
         (item) =>
@@ -183,7 +294,11 @@ export default function PickerScreen() {
       try {
         let fileUrl, fileBlob, filename;
 
-        if (sourceName === "ARASAAC" || sourceName === "AAC Image Library") {
+        if (
+          sourceName === "ARASAAC" ||
+          sourceName === "AAC Image Library" ||
+          sourceName === "Flaticon"
+        ) {
           fileUrl = item.imageUrl;
           const response = await fetch(fileUrl);
           fileBlob = await response.blob();
@@ -196,7 +311,6 @@ export default function PickerScreen() {
           fileBlob = new Blob([svgContent], { type: "image/svg+xml" });
           filename = `${sanitizedName}.svg`;
         } else {
-          // For all local PNG sources
           let requirePath;
           if (sourceName === "OpenMoji")
             requirePath = openmojiImages[item.hexcode];
@@ -232,8 +346,6 @@ export default function PickerScreen() {
     }
   };
 
-  const currentWord = deckData[currentIndex];
-
   const performSearch = async (query: string) => {
     if (!query) {
       setSearchResults({});
@@ -241,6 +353,8 @@ export default function PickerScreen() {
     }
     console.log(`---- NEW SEARCH ----`);
     console.log(`Searching for: "${query}"`);
+
+    setFlaticonResults([]);
 
     // Local search logic
     const mulberryResults = fuseMulberry.search(query).slice(0, 4);
@@ -261,7 +375,6 @@ export default function PickerScreen() {
 
     setSearchResults(resultsBySource);
 
-    // API search logic
     setIsApiLoading(true);
     try {
       const repoDir = await getRepositoryDirectory();
@@ -295,8 +408,6 @@ export default function PickerScreen() {
 
       if (arasaacResponse.ok) {
         const arasaacJson = await arasaacResponse.json();
-
-        // --- FIX IS HERE: Ensure this .map() has its function ---
         const arasaacResults = arasaacJson.slice(0, 4).map((result) => ({
           item: {
             id: result._id,
@@ -321,8 +432,6 @@ export default function PickerScreen() {
 
       if (globalSymbolsResponse.ok) {
         const globalSymbolsJson = await globalSymbolsResponse.json();
-
-        // --- And ensure this .map() also has its function ---
         const processedResults = globalSymbolsJson
           .map((label) => ({
             item: {
@@ -407,9 +516,18 @@ export default function PickerScreen() {
           onChangeText={setSearchTerm}
           onSubmitEditing={handleSearch}
         />
-        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-          <Text style={styles.navButtonText}>Refresh</Text>
-        </TouchableOpacity>
+        <View style={styles.buttonGroup}>
+          <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+            <Text style={styles.navButtonText}>Refresh</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.searchButton, styles.flaticonButton]}
+            onPress={handleFlaticonSearch}
+            disabled={isFlaticonLoading}
+          >
+            <Text style={styles.navButtonText}>Flaticon</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView style={styles.resultsScrollView}>
@@ -435,6 +553,30 @@ export default function PickerScreen() {
           <View style={styles.sourceContainer}>
             <Text style={styles.sourceHeader}>API Sources</Text>
             <ActivityIndicator style={{ margin: 20 }} size="large" />
+          </View>
+        )}
+        {isFlaticonLoading && (
+          <View style={styles.sourceContainer}>
+            <Text style={styles.sourceHeader}>Flaticon</Text>
+            <ActivityIndicator style={{ margin: 20 }} size="large" />
+          </View>
+        )}
+        {!isFlaticonLoading && flaticonResults.length > 0 && (
+          <View style={styles.sourceContainer}>
+            <Text style={styles.sourceHeader}>Flaticon</Text>
+            <FlatList
+              data={flaticonResults}
+              renderItem={({ item }) => (
+                <SymbolItem
+                  item={item.item}
+                  source={"Flaticon" as any}
+                  onPress={() => handleSymbolPress(item.item, "Flaticon")}
+                />
+              )}
+              keyExtractor={(item) => `Flaticon-${item.refIndex}`}
+              horizontal={true}
+              showsHorizontalScrollIndicator={false}
+            />
           </View>
         )}
       </ScrollView>
@@ -475,6 +617,7 @@ const styles = StyleSheet.create({
     width: "100%",
     paddingHorizontal: 10,
     marginVertical: 10,
+    alignItems: "center",
   },
   searchInput: {
     flex: 1,
@@ -486,12 +629,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginRight: 10,
   },
+  buttonGroup: {
+    flexDirection: "row",
+  },
   searchButton: {
     backgroundColor: "#555",
     paddingVertical: 12,
     paddingHorizontal: 15,
     borderRadius: 8,
     justifyContent: "center",
+  },
+  flaticonButton: {
+    backgroundColor: "#00A99D",
+    marginLeft: 8,
   },
   resultsScrollView: {
     flex: 1,

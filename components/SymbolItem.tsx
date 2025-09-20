@@ -1,5 +1,3 @@
-// components/SymbolItem
-
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { SvgXml } from "react-native-svg";
@@ -7,9 +5,8 @@ import { mulberrySvgData } from "../assets/mulberrySvgData.js";
 import { openmojiImages } from "../assets/openmojiImages.js";
 import { picomImages } from "../assets/picomImages.js";
 import { scleraImages } from "../assets/scleraImages.js";
-import { blissImages } from "../assets/blissImages.js"
+import { blissImages } from "../assets/blissImages.js";
 import { notoEmojiImages } from "../assets/notoEmojiImages.js";
-import { arasaacImages } from "../assets/arasaacImages.js";
 
 interface SymbolItemProps {
   item: any;
@@ -21,7 +18,8 @@ interface SymbolItemProps {
     | "Bliss"
     | "Noto Emoji"
     | "ARASAAC"
-    | "AAC Image Library";
+    | "AAC Image Library"
+    | "Flaticon"; // Add Flaticon to the type list
   onPress: () => void;
 }
 
@@ -54,7 +52,6 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
       <Text style={styles.errorText}>?</Text>
     );
   } else if (source === "Sclera") {
-    // 👈 Add rendering logic for Sclera
     name = item.name;
     const requirePath = scleraImages[item.filename];
     imageContent = requirePath ? (
@@ -78,18 +75,11 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
     ) : (
       <Text style={styles.errorText}>?</Text>
     );
-  } else if (source === "ARASAAC") {
-    name = item.name;
-    imageContent = item.imageUrl ? (
-      <Image
-        source={{ uri: item.imageUrl }}
-        style={styles.image}
-        resizeMode="contain"
-      />
-    ) : (
-      <Text style={styles.errorText}>?</Text>
-    );
-  } else if (source === "AAC Image Library") {
+  } else if (
+    source === "ARASAAC" ||
+    source === "AAC Image Library" ||
+    source === "Flaticon"
+  ) {
     name = item.name;
     imageContent = item.imageUrl ? (
       <Image
@@ -116,7 +106,7 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
 const styles = StyleSheet.create({
   container: {
     width: 120,
-    height: 140, // Increased height for labels
+    height: 140,
     padding: 5,
     margin: 5,
     alignItems: "center",
@@ -127,7 +117,7 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     width: "100%",
-    height: 80, // Fixed height for the image part
+    height: 80,
     alignItems: "center",
     justifyContent: "center",
   },
