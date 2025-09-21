@@ -8,3 +8,4 @@
 1. Chang AACIL to AACIL in frontend (may need to just change it on the API side in current code setup)
 1. Update top toolbar dropdown to left align the icons
 1. Check the async loading of ARASAAC and AACIL (might still be grabbing all at once) and add async to flaticon if it is not there
+1. Figure out how to add headers to the API call symbols metadata csv
