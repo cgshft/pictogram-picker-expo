@@ -32,7 +32,7 @@ import {
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 
-// Local Symbol Data & Components (imports remain the same)
+// Local Symbol Data & Components
 import { mulberryData } from "../assets/mulberrySymbols.js";
 import { openmojiData } from "../assets/openmojiSymbols.js";
 import { picomData } from "../assets/picomSymbols.js";
@@ -48,8 +48,10 @@ import { notoEmojiImages } from "../assets/notoEmojiImages.js";
 import SymbolItem from "../components/SymbolItem";
 import TextSymbolModal from "../components/TextSymbolModal";
 import CombinePreviewModal from "../components/CombinePreviewModal";
+// Import the new skeleton component
+import SkeletonSymbolItem from "../components/SkeletonSymbolItem";
 
-// Fuse.js setup (remains the same)
+// Fuse.js setup remains the same
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
   includeScore: true,
@@ -80,6 +82,17 @@ const fuseNotoEmoji = new Fuse(notoEmojiData, {
   includeScore: true,
   threshold: 0.4,
 });
+
+const SOURCE_ORDER = [
+  "ARASAAC",
+  "AAC Image Library",
+  "Mulberry",
+  "Picom",
+  "OpenMoji",
+  "Noto Emoji",
+  "Sclera",
+  "Bliss",
+];
 
 export default function PickerScreen() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -165,6 +178,7 @@ export default function PickerScreen() {
           Picom: item.filename,
           Sclera: item.filename,
           Bliss: item.filename,
+          "Noto Emoji": item.filename,
         };
         const imageResource = imageMap[sourceName]?.[keyMap[sourceName]];
         if (imageResource) {
@@ -705,34 +719,75 @@ export default function PickerScreen() {
         style={styles.resultsScrollView}
         keyboardShouldPersistTaps="handled"
       >
-        {Object.keys(searchResults).map((sourceName) => (
-          <View key={sourceName} style={styles.sourceContainer}>
-            {/* --- UPDATED: Vertical Header Layout --- */}
-            <View style={styles.sourceHeaderContainer}>
-              <Text style={styles.sourceHeaderText}>{sourceName}</Text>
-            </View>
-            <FlatList
-              style={{ flex: 1 }} // Ensure list takes remaining space
-              data={searchResults[sourceName]}
-              renderItem={({ item }) => (
-                <SymbolItem
-                  item={item.item}
-                  source={sourceName as any}
-                  onPress={() => handleSymbolPress(item.item, sourceName)}
+        {/* --- UPDATED: Rendering logic with skeletons --- */}
+        {SOURCE_ORDER.map((sourceName) => {
+          const results = searchResults[sourceName];
+          const isApiSource =
+            sourceName === "ARASAAC" || sourceName === "AAC Image Library";
+
+          // If we have results, render them.
+          if (results && results.length > 0) {
+            return (
+              <View key={sourceName} style={styles.sourceContainer}>
+                <View style={styles.sourceHeaderContainer}>
+                  <Text style={styles.sourceHeaderText}>{sourceName}</Text>
+                </View>
+                <FlatList
+                  style={{ flex: 1 }}
+                  data={results}
+                  renderItem={({ item }) => (
+                    <SymbolItem
+                      item={item.item}
+                      source={sourceName as any}
+                      onPress={() => handleSymbolPress(item.item, sourceName)}
+                    />
+                  )}
+                  keyExtractor={(item, index) =>
+                    `${sourceName}-${item.refIndex}-${index}`
+                  }
+                  horizontal={true}
+                  showsHorizontalScrollIndicator={false}
                 />
-              )}
-              keyExtractor={(item, index) =>
-                `${sourceName}-${item.refIndex}-${index}`
-              }
-              horizontal={true}
-              showsHorizontalScrollIndicator={false}
-            />
+              </View>
+            );
+          }
+          // If API is loading and this is an API source, render skeletons.
+          else if (isApiLoading && isApiSource) {
+            return (
+              <View
+                key={`${sourceName}-loading`}
+                style={styles.sourceContainer}
+              >
+                <View style={styles.sourceHeaderContainer}>
+                  <Text style={styles.sourceHeaderText}>{sourceName}</Text>
+                </View>
+                <View style={{ flexDirection: "row" }}>
+                  <SkeletonSymbolItem />
+                  <SkeletonSymbolItem />
+                  <SkeletonSymbolItem />
+                  <SkeletonSymbolItem />
+                </View>
+              </View>
+            );
+          }
+          // Otherwise, render nothing for this source.
+          return null;
+        })}
+
+        {isFlaticonLoading && (
+          <View style={styles.sourceContainer}>
+            <View style={styles.sourceHeaderContainer}>
+              <Text style={styles.sourceHeaderText}>Flaticon</Text>
+            </View>
+            <View style={{ flexDirection: "row" }}>
+              <SkeletonSymbolItem />
+              <SkeletonSymbolItem />
+              <SkeletonSymbolItem />
+              <SkeletonSymbolItem />
+            </View>
           </View>
-        ))}
-        {isApiLoading && (
-          <ActivityIndicator style={{ margin: 20 }} size="large" />
         )}
-        {isFlaticonLoading && !isApiLoading && (
+        {!isFlaticonLoading && flaticonResults.length > 0 && (
           <View style={styles.sourceContainer}>
             <View style={styles.sourceHeaderContainer}>
               <Text style={styles.sourceHeaderText}>Flaticon</Text>
@@ -790,7 +845,6 @@ export default function PickerScreen() {
           </View>
         </View>
       )}
-
       <View style={styles.navContainer}>
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
@@ -892,27 +946,25 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   resultsScrollView: { flex: 1, width: "100%" },
-  // --- UPDATED Styles for Vertical Headers ---
   sourceContainer: {
-    flexDirection: "row", // Children side-by-side
-    alignItems: "center", // Vertically center the header with the list
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 10,
   },
   sourceHeaderContainer: {
-    width: 15, // Fixed width for the vertical label
+    width: 25,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 5,
   },
   sourceHeaderText: {
     color: "white",
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "bold",
-    transform: [{ rotate: "-90deg" }], // Rotate the text
-    width: 140, // This becomes the "height" of the vertical text
+    transform: [{ rotate: "-90deg" }],
+    width: 140,
     textAlign: "center",
   },
-  // ---
   navContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
