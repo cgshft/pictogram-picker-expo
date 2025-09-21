@@ -13,6 +13,7 @@ import {
   Alert,
   Switch,
   Image,
+  Keyboard,
 } from "react-native";
 import { useDeckStore } from "../state/store";
 import { Stack } from "expo-router";
@@ -29,8 +30,9 @@ import {
   saveCombinedSymbol,
 } from "../services/cachingService";
 import * as SecureStore from "expo-secure-store";
+import { Ionicons } from "@expo/vector-icons"; // Using icons for a cleaner toolbar
 
-// Local Symbol Data
+// Local Symbol Data (imports remain the same)
 import { mulberryData } from "../assets/mulberrySymbols.js";
 import { openmojiData } from "../assets/openmojiSymbols.js";
 import { picomData } from "../assets/picomSymbols.js";
@@ -38,7 +40,7 @@ import { scleraData } from "../assets/scleraSymbols.js";
 import { blissData } from "../assets/blissSymbols.js";
 import { notoEmojiData } from "../assets/notoEmojiSymbols.js";
 
-// Local Symbol Image Data
+// Local Symbol Image Data (imports remain the same)
 import { mulberryImages } from "../assets/mulberryImages.js";
 import { openmojiImages } from "../assets/openmojiImages.js";
 import { picomImages } from "../assets/picomImages.js";
@@ -51,6 +53,7 @@ import SymbolItem from "../components/SymbolItem";
 import TextSymbolModal from "../components/TextSymbolModal";
 import CombinePreviewModal from "../components/CombinePreviewModal";
 
+// --- (Fuse.js setup remains the same) ---
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
   includeScore: true,
@@ -83,19 +86,28 @@ const fuseNotoEmoji = new Fuse(notoEmojiData, {
 });
 
 export default function PickerScreen() {
+  // --- STATE ---
   const [searchTerm, setSearchTerm] = useState("");
+  const [textSymbolInput, setTextSymbolInput] = useState("");
+  const [noteInput, setNoteInput] = useState("");
+
   const [searchResults, setSearchResults] = useState({});
   const [isApiLoading, setIsApiLoading] = useState(false);
   const [flaticonResults, setFlaticonResults] = useState([]);
   const [isFlaticonLoading, setIsFlaticonLoading] = useState(false);
-  const [textSymbolInput, setTextSymbolInput] = useState("");
+
   const [isTextModalVisible, setIsTextModalVisible] = useState(false);
   const [isMultiSelect, setIsMultiSelect] = useState(false);
   const [selection, setSelection] = useState([]);
   const [isOrType, setIsOrType] = useState(true);
   const [isCombineModalVisible, setIsCombineModalVisible] = useState(false);
-  const [noteInput, setNoteInput] = useState("");
+
   const [flaticonApiKey, setFlaticonApiKey] = useState<string | null>(null);
+
+  // New state for collapsible toolbar inputs
+  const [activeInput, setActiveInput] = useState<"search" | "text" | null>(
+    null
+  );
 
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
@@ -108,27 +120,13 @@ export default function PickerScreen() {
 
   const currentWord = deckData[currentIndex];
 
-  // --- LOGGING ---
-  // This will log the entire selection state every time it changes.
-  useEffect(() => {
-    console.log("--- SELECTION STATE COMMITTED ---");
-    console.log(
-      JSON.stringify(
-        selection.map((s) => ({ name: s.name, source: s.sourceName })),
-        null,
-        2
-      )
-    );
-    console.log(`Total items: ${selection.length}`);
-    console.log("---------------------------------");
-  }, [selection]);
-
   useEffect(() => {
     if (currentWord) {
       setNoteInput(currentWord.notes || "");
     }
   }, [currentWord]);
 
+  // --- HANDLERS (Unchanged) ---
   const promptForApiKey = () => {
     Alert.prompt(
       "Enter API Key",
@@ -142,25 +140,15 @@ export default function PickerScreen() {
       }
     );
   };
-
   const handleSymbolPress = async (item, sourceName) => {
-    // --- LOGGING ---
-    console.log(
-      `[handleSymbolPress] Fired. Source: ${sourceName}, Item Name: ${
-        item.name || item["symbol-en"]
-      }`
-    );
-
     const uniqueId = `${sourceName}-${
       item.filename || item.hexcode || item.id || item["symbol-en"]
     }`;
-
     if (isMultiSelect) {
       if (selection.find((s) => s.uniqueId === uniqueId)) {
         setSelection((prev) => prev.filter((s) => s.uniqueId !== uniqueId));
         return;
       }
-
       const selectionItem = {
         uniqueId,
         sourceName,
@@ -171,7 +159,6 @@ export default function PickerScreen() {
         hexcode: item.hexcode,
         id: item.id,
       };
-
       if (!selectionItem.imageUrl) {
         const imageMap = {
           Mulberry: mulberryImages,
@@ -209,31 +196,13 @@ export default function PickerScreen() {
           return;
         }
       }
-
-      // --- LOGGING ---
-      console.log(
-        `[handleSymbolPress] Preparing to add item: ${selectionItem.name}`
-      );
-      setSelection((currentSelection) => {
-        // --- LOGGING ---
-        console.log(
-          "[setSelection] Previous state had names:",
-          JSON.stringify(currentSelection.map((s) => s.name))
-        );
-        const newState = [...currentSelection, selectionItem];
-        console.log(
-          "[setSelection] New state will have names:",
-          JSON.stringify(newState.map((s) => s.name))
-        );
-        return newState;
-      });
+      setSelection((currentSelection) => [...currentSelection, selectionItem]);
     } else {
       let symbolName =
         sourceName === "Mulberry" ? item["symbol-en"] : item.name;
       selectSymbol(symbolName, sourceName, item.filename);
     }
   };
-
   const handleFlaticonSearch = async () => {
     let key = flaticonApiKey;
     if (!key) {
@@ -246,16 +215,11 @@ export default function PickerScreen() {
         return;
       }
     }
-
     const query = searchTerm.trim() || currentWord?.english || "";
     if (!query) return;
-
     setIsFlaticonLoading(true);
     setFlaticonResults([]);
-    const headers = {
-      "x-freepik-api-key": key,
-      Accept: "application/json",
-    };
+    const headers = { "x-freepik-api-key": key, Accept: "application/json" };
     try {
       const searchUrl = `https://api.freepik.com/v1/icons?term=${encodeURIComponent(
         query
@@ -315,7 +279,6 @@ export default function PickerScreen() {
       setIsFlaticonLoading(false);
     }
   };
-
   const handleExport = async () => {
     if (deckData.length === 0) {
       alert("No data to export.");
@@ -323,7 +286,6 @@ export default function PickerScreen() {
     }
     const csvString = Papa.unparse(deckData);
     const filename = `export_${Date.now()}.csv`;
-
     if (Platform.OS === "web") {
       const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
@@ -348,7 +310,6 @@ export default function PickerScreen() {
       }
     }
   };
-
   const handleExportMetadata = async () => {
     if (Platform.OS === "web") {
       alert("Metadata export is a mobile-only feature.");
@@ -375,28 +336,11 @@ export default function PickerScreen() {
       alert("Failed to export metadata CSV.");
     }
   };
-
-  const screenOptions = useMemo(
-    () => ({
-      title: deckName,
-      headerRight: () => (
-        <View style={{ flexDirection: "row" }}>
-          <Button onPress={handleExport} title="Export Deck" />
-          <View style={{ width: 10 }} />
-          <Button onPress={handleExportMetadata} title="Export Log" />
-        </View>
-      ),
-    }),
-    [deckName, deckData]
-  );
-
   const performSearch = async (query: string) => {
     if (!query) {
       setSearchResults({});
       return;
     }
-    console.log(`---- NEW SEARCH ----`);
-    console.log(`Searching for: "${query}"`);
     setFlaticonResults([]);
     const mulberryResults = fuseMulberry.search(query).slice(0, 4);
     const openMojiResults = fuseOpenMoji.search(query).slice(0, 4);
@@ -404,7 +348,6 @@ export default function PickerScreen() {
     const scleraResults = fuseSclera.search(query).slice(0, 4);
     const blissResults = fuseBliss.search(query).slice(0, 4);
     const notoEmojiResults = fuseNotoEmoji.search(query).slice(0, 4);
-
     const resultsBySource = {};
     if (mulberryResults.length > 0) resultsBySource.Mulberry = mulberryResults;
     if (openMojiResults.length > 0) resultsBySource.OpenMoji = openMojiResults;
@@ -413,10 +356,8 @@ export default function PickerScreen() {
     if (blissResults.length > 0) resultsBySource.Bliss = blissResults;
     if (notoEmojiResults.length > 0)
       resultsBySource["Noto Emoji"] = notoEmojiResults;
-
     setSearchResults(resultsBySource);
     setIsApiLoading(true);
-
     try {
       const repoDir = await getRepositoryDirectory();
       const metadataFile = repoDir
@@ -441,18 +382,19 @@ export default function PickerScreen() {
         globalSymbolsPromise,
       ]);
       const newApiResults = {};
-
       if (arasaacResponse.ok) {
         const arasaacJson = await arasaacResponse.json();
-        const arasaacResults = arasaacJson.slice(0, 4).map((result) => ({
-          item: {
-            id: result._id,
-            name: result.keywords?.[0]?.keyword || "untitled",
-            imageUrl: `https://api.arasaac.org/api/pictograms/${result._id}`,
-          },
-          score: 0,
-          refIndex: result._id,
-        }));
+        const arasaacResults = arasaacJson
+          .slice(0, 4)
+          .map((result) => ({
+            item: {
+              id: result._id,
+              name: result.keywords?.[0]?.keyword || "untitled",
+              imageUrl: `https://api.arasaac.org/api/pictograms/${result._id}`,
+            },
+            score: 0,
+            refIndex: result._id,
+          }));
         if (arasaacResults.length > 0) {
           newApiResults.ARASAAC = arasaacResults;
           cacheApiResults(
@@ -464,7 +406,6 @@ export default function PickerScreen() {
           );
         }
       }
-
       if (globalSymbolsResponse.ok) {
         const globalSymbolsJson = await globalSymbolsResponse.json();
         const processedResults = globalSymbolsJson
@@ -501,26 +442,6 @@ export default function PickerScreen() {
       setIsApiLoading(false);
     }
   };
-
-  useEffect(() => {
-    const newWordQuery = deckData[currentIndex]?.english;
-    if (newWordQuery) {
-      setSearchTerm("");
-      performSearch(newWordQuery);
-    }
-  }, [currentIndex, deckData]);
-
-  const handleSearch = () => {
-    const query = searchTerm.trim() || currentWord?.english || "";
-    performSearch(query);
-  };
-
-  const handleCreateTextSymbol = () => {
-    if (textSymbolInput.trim()) {
-      setIsTextModalVisible(true);
-    }
-  };
-
   const handleSaveTextSymbol = async ({ base64Data, symbolName }) => {
     setIsTextModalVisible(false);
     const repoDir = await getRepositoryDirectory();
@@ -534,12 +455,54 @@ export default function PickerScreen() {
       setTextSymbolInput("");
     }
   };
+  const handleSaveCombination = async ({ base64Data, combinedName }) => {
+    setIsCombineModalVisible(false);
+    const repoDir = await getRepositoryDirectory();
+    if (!repoDir) return;
+    const savedFile = await saveCombinedSymbol(
+      repoDir,
+      base64Data,
+      combinedName
+    );
+    if (savedFile) {
+      selectSymbol(combinedName, "Combined", savedFile.filename);
+      toggleMultiSelect();
+    }
+  };
+  const handleSaveNote = () => {
+    addNote(noteInput);
+    Alert.alert("Note Saved!");
+    Keyboard.dismiss();
+  };
 
+  useEffect(() => {
+    const newWordQuery = deckData[currentIndex]?.english;
+    if (newWordQuery) {
+      setSearchTerm("");
+      performSearch(newWordQuery);
+    }
+  }, [currentIndex, deckData]);
+
+  const handleSearch = () => {
+    const query = searchTerm.trim() || currentWord?.english || "";
+    performSearch(query);
+    setActiveInput(null);
+    Keyboard.dismiss();
+  };
+  const handleCreateTextSymbol = () => {
+    if (textSymbolInput.trim()) {
+      setIsTextModalVisible(true);
+      setActiveInput(null);
+      Keyboard.dismiss();
+    }
+  };
   const toggleMultiSelect = () => {
     setIsMultiSelect(!isMultiSelect);
     setSelection([]);
   };
-
+  const toggleInputVisibility = (inputType: "search" | "text") => {
+    setActiveInput((current) => (current === inputType ? null : inputType));
+  };
   const handleCombine = () => {
     if (selection.length < 2) {
       Alert.alert("Select More Symbols", "Please select at least two symbols.");
@@ -548,28 +511,20 @@ export default function PickerScreen() {
     setIsCombineModalVisible(true);
   };
 
-  const handleSaveCombination = async ({ base64Data, combinedName }) => {
-    setIsCombineModalVisible(false);
-    const repoDir = await getRepositoryDirectory();
-    if (!repoDir) return;
-
-    const savedFile = await saveCombinedSymbol(
-      repoDir,
-      base64Data,
-      combinedName
-    );
-
-    if (savedFile) {
-      selectSymbol(combinedName, "Combined", savedFile.filename);
-      toggleMultiSelect();
-    }
-  };
-
-  const handleSaveNote = () => {
-    addNote(noteInput);
-    Alert.alert("Note Saved!");
-  };
-
+  const screenOptions = useMemo(
+    () => ({
+      title: deckName,
+      headerRight: () => (
+        <View style={{ flexDirection: "row" }}>
+          {" "}
+          <Button onPress={handleExport} title="Export Deck" />{" "}
+          <View style={{ width: 10 }} />{" "}
+          <Button onPress={handleExportMetadata} title="Export Log" />{" "}
+        </View>
+      ),
+    }),
+    [deckName, deckData]
+  );
   if (!isLoaded || deckData.length === 0) {
     return (
       <View style={styles.container}>
@@ -577,74 +532,132 @@ export default function PickerScreen() {
       </View>
     );
   }
-
   const isAtStart = currentIndex === 0;
   const isAtEnd = currentIndex === deckData.length - 1;
 
   return (
     <View style={styles.container}>
       <Stack.Screen options={screenOptions} />
+
       <View style={styles.wordContainer}>
-        <Text style={styles.statusText}>
-          Word {currentIndex + 1} of {deckData.length}
-        </Text>
-        <Text style={styles.wordText}>{currentWord?.english || "N/A"}</Text>
-        <Text style={styles.infoText}>
-          Symbol: {currentWord?.symbol_name || "None"}
-        </Text>
-      </View>
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Custom Search..."
-          placeholderTextColor="#888"
-          value={searchTerm}
-          onChangeText={setSearchTerm}
-          onSubmitEditing={handleSearch}
-        />
-        <View style={styles.buttonGroup}>
-          <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-            <Text style={styles.navButtonText}>Refresh</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.searchButton, styles.flaticonButton]}
-            onPress={handleFlaticonSearch}
-            disabled={isFlaticonLoading}
-          >
-            <Text style={styles.navButtonText}>Flaticon</Text>
-          </TouchableOpacity>
+        <View style={styles.wordInfoRow}>
+          <Text style={styles.statusText}>
+            Word {currentIndex + 1} / {deckData.length}
+          </Text>
+          <Text style={styles.infoText} numberOfLines={1}>
+            Symbol: {currentWord?.symbol_name || "None"}
+          </Text>
         </View>
+        <Text style={styles.wordText} numberOfLines={1} adjustsFontSizeToFit>
+          {currentWord?.english || "N/A"}
+        </Text>
       </View>
-      <View style={styles.textSymbolContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Enter Unicode character (e.g., ∑, ✈)..."
-          placeholderTextColor="#888"
-          value={textSymbolInput}
-          onChangeText={setTextSymbolInput}
-          onSubmitEditing={handleCreateTextSymbol}
-        />
+
+      {/* --- REFACTORED TOOLBAR with LABELS --- */}
+      <View style={styles.toolbarContainer}>
         <TouchableOpacity
-          style={styles.createButton}
-          onPress={handleCreateTextSymbol}
+          style={styles.toolbarButton}
+          onPress={() => toggleInputVisibility("search")}
         >
-          <Text style={styles.navButtonText}>Create</Text>
+          <Ionicons
+            name="search"
+            size={24}
+            color={activeInput === "search" ? "#007AFF" : "white"}
+          />
+          <Text
+            style={
+              activeInput === "search"
+                ? styles.toolbarLabelActive
+                : styles.toolbarLabel
+            }
+          >
+            Search
+          </Text>
         </TouchableOpacity>
-      </View>
-      <View style={styles.multiSelectToggleContainer}>
+        <TouchableOpacity
+          style={styles.toolbarButton}
+          onPress={() => toggleInputVisibility("text")}
+        >
+          <Ionicons
+            name="text"
+            size={24}
+            color={activeInput === "text" ? "#007AFF" : "white"}
+          />
+          <Text
+            style={
+              activeInput === "text"
+                ? styles.toolbarLabelActive
+                : styles.toolbarLabel
+            }
+          >
+            Text Input
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.toolbarButton} onPress={handleSearch}>
+          <Ionicons name="refresh" size={24} color="white" />
+          <Text style={styles.toolbarLabel}>Refresh</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.toolbarButton}
+          onPress={handleFlaticonSearch}
+          disabled={isFlaticonLoading}
+        >
+          <Ionicons name="cloud-download-outline" size={24} color="white" />
+          <Text style={styles.toolbarLabel}>Flaticon</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={[
-            styles.searchButton,
+            styles.toolbarButton,
             isMultiSelect && styles.multiSelectActiveButton,
           ]}
           onPress={toggleMultiSelect}
         >
-          <Text style={styles.navButtonText}>
-            {isMultiSelect ? "Cancel Combination" : "Select Multiple"}
-          </Text>
+          <Ionicons name="copy" size={24} color="white" />
+          <Text style={styles.toolbarLabel}>Combine</Text>
         </TouchableOpacity>
       </View>
-      <ScrollView style={styles.resultsScrollView}>
+
+      {activeInput === "search" && (
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Custom Search..."
+            placeholderTextColor="#888"
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            onSubmitEditing={handleSearch}
+            autoFocus={true}
+          />
+          <TouchableOpacity style={styles.goButton} onPress={handleSearch}>
+            <Text style={styles.navButtonText}>Go</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {activeInput === "text" && (
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Enter Unicode character (e.g., ∑, ✈)..."
+            placeholderTextColor="#888"
+            value={textSymbolInput}
+            onChangeText={setTextSymbolInput}
+            onSubmitEditing={handleCreateTextSymbol}
+            autoFocus={true}
+          />
+          <TouchableOpacity
+            style={styles.goButton}
+            onPress={handleCreateTextSymbol}
+          >
+            <Text style={styles.navButtonText}>Create</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <ScrollView
+        style={styles.resultsScrollView}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ... (rest of the component is unchanged) ... */}
         {Object.keys(searchResults).map((sourceName) => (
           <View key={sourceName} style={styles.sourceContainer}>
             <Text style={styles.sourceHeader}>{sourceName}</Text>
@@ -695,11 +708,7 @@ export default function PickerScreen() {
           <Text style={styles.trayTitle}>
             Selected Symbols ({selection.length})
           </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.trayScrollView}
-          >
+          <ScrollView horizontal style={styles.trayScrollView}>
             {selection.map((item) => {
               const sourceUri = item.localUri || item.imageUrl;
               return sourceUri ? (
@@ -729,8 +738,6 @@ export default function PickerScreen() {
           </View>
         </View>
       )}
-
-      {/* ADDED NOTES SECTION */}
       <View style={styles.notesContainer}>
         <TextInput
           style={styles.notesInput}
@@ -747,7 +754,6 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>Save Note</Text>
         </TouchableOpacity>
       </View>
-
       <View style={styles.navContainer}>
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
@@ -764,7 +770,6 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>{"Next >>"}</Text>
         </TouchableOpacity>
       </View>
-
       <CombinePreviewModal
         visible={isCombineModalVisible}
         selection={selection}
@@ -784,21 +789,54 @@ export default function PickerScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 10 },
-  wordContainer: { width: "100%", alignItems: "center", padding: 10 },
-  statusText: { color: "gray", fontSize: 18, marginBottom: 10 },
+  wordContainer: { width: "100%", paddingHorizontal: 10, marginBottom: 10 },
+  wordInfoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  statusText: { color: "gray", fontSize: 14 },
+  infoText: { color: "cyan", fontSize: 14, fontStyle: "italic", flexShrink: 1 },
   wordText: {
     color: "white",
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: "bold",
     textAlign: "center",
   },
-  infoText: { color: "cyan", fontSize: 16, marginTop: 8, fontStyle: "italic" },
-  searchContainer: {
+  // --- UPDATED & NEW TOOLBAR STYLES ---
+  toolbarContainer: {
     flexDirection: "row",
-    width: "100%",
-    paddingHorizontal: 10,
-    marginVertical: 10,
+    justifyContent: "space-around",
+    backgroundColor: "#2C2C2E",
+    borderRadius: 8,
+    paddingVertical: 4,
+    marginBottom: 10,
+  },
+  toolbarButton: {
+    flex: 1, // Make buttons take equal width
+    alignItems: "center", // Center icon and text
+    padding: 4,
+  },
+  toolbarLabel: {
+    color: "white",
+    fontSize: 10,
+    marginTop: 2, // Space between icon and label
+  },
+  toolbarLabelActive: {
+    color: "#007AFF", // Active color
+    fontSize: 10,
+    marginTop: 2,
+  },
+  multiSelectActiveButton: {
+    backgroundColor: "#007AFF",
+    borderRadius: 6,
+  },
+  // --- ---
+  inputContainer: {
+    flexDirection: "row",
     alignItems: "center",
+    marginBottom: 10,
   },
   searchInput: {
     flex: 1,
@@ -810,15 +848,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginRight: 10,
   },
-  buttonGroup: { flexDirection: "row" },
-  searchButton: {
-    backgroundColor: "#555",
+  goButton: {
+    backgroundColor: "#007AFF",
     paddingVertical: 12,
     paddingHorizontal: 15,
     borderRadius: 8,
-    justifyContent: "center",
   },
-  flaticonButton: { backgroundColor: "#00A99D", marginLeft: 8 },
   resultsScrollView: { flex: 1, width: "100%" },
   sourceContainer: { marginBottom: 20 },
   sourceHeader: {
@@ -846,22 +881,6 @@ const styles = StyleSheet.create({
   },
   disabledButton: { backgroundColor: "#444444" },
   navButtonText: { color: "white", fontSize: 16, fontWeight: "600" },
-  textSymbolContainer: {
-    flexDirection: "row",
-    width: "100%",
-    paddingHorizontal: 10,
-    marginBottom: 10,
-    alignItems: "center",
-  },
-  createButton: {
-    backgroundColor: "#34C759",
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    justifyContent: "center",
-  },
-  multiSelectToggleContainer: { paddingHorizontal: 10, marginBottom: 10 },
-  multiSelectActiveButton: { backgroundColor: "#FF3B30" },
   trayContainer: {
     padding: 10,
     borderTopWidth: 1,
@@ -884,7 +903,6 @@ const styles = StyleSheet.create({
   },
   switchRow: { flexDirection: "row", alignItems: "center" },
   label: { color: "#ccc", marginRight: 10 },
-  // ADDED STYLES FOR NOTES SECTION
   notesContainer: {
     flexDirection: "row",
     width: "100%",
@@ -903,7 +921,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   saveNoteButton: {
-    backgroundColor: "#FF9500", // Orange color for visibility
+    backgroundColor: "#FF9500",
     paddingVertical: 12,
     paddingHorizontal: 15,
     borderRadius: 8,
