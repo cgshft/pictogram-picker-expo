@@ -28,6 +28,7 @@ import {
   saveTextSymbol,
   saveCombinedSymbol,
 } from "../services/cachingService";
+import * as SecureStore from "expo-secure-store";
 
 // Local Symbol Data
 import { mulberryData } from "../assets/mulberrySymbols.js";
@@ -81,8 +82,6 @@ const fuseNotoEmoji = new Fuse(notoEmojiData, {
   threshold: 0.4,
 });
 
-const FLATICON_API_KEY = "YOUR_API_KEY_HERE";
-
 export default function PickerScreen() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState({});
@@ -95,7 +94,8 @@ export default function PickerScreen() {
   const [selection, setSelection] = useState([]);
   const [isOrType, setIsOrType] = useState(true);
   const [isCombineModalVisible, setIsCombineModalVisible] = useState(false);
-  const [noteInput, setNoteInput] = useState(""); // State for the note input
+  const [noteInput, setNoteInput] = useState("");
+  const [flaticonApiKey, setFlaticonApiKey] = useState<string | null>(null);
 
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
@@ -104,42 +104,75 @@ export default function PickerScreen() {
   const nextWord = useDeckStore((state) => state.nextWord);
   const prevWord = useDeckStore((state) => state.prevWord);
   const selectSymbol = useDeckStore((state) => state.selectSymbol);
-  const addNote = useDeckStore((state) => state.addNote); // Get the new action
+  const addNote = useDeckStore((state) => state.addNote);
 
   const currentWord = deckData[currentIndex];
 
-  // Effect to update the note input when the current word changes
+  // --- LOGGING ---
+  // This will log the entire selection state every time it changes.
+  useEffect(() => {
+    console.log("--- SELECTION STATE COMMITTED ---");
+    console.log(
+      JSON.stringify(
+        selection.map((s) => ({ name: s.name, source: s.sourceName })),
+        null,
+        2
+      )
+    );
+    console.log(`Total items: ${selection.length}`);
+    console.log("---------------------------------");
+  }, [selection]);
+
   useEffect(() => {
     if (currentWord) {
       setNoteInput(currentWord.notes || "");
     }
   }, [currentWord]);
 
-  // All handler functions (handleSymbolPress, handleFlaticonSearch, etc.) remain the same...
-  // ... (paste your existing handler functions here)
+  const promptForApiKey = () => {
+    Alert.prompt(
+      "Enter API Key",
+      "Please paste your Flaticon API key. It will be stored securely on your device.",
+      async (keyFromPrompt) => {
+        if (keyFromPrompt) {
+          await SecureStore.setItemAsync("flaticonApiKey", keyFromPrompt);
+          setFlaticonApiKey(keyFromPrompt);
+          Alert.alert("Success", "API Key saved securely.");
+        }
+      }
+    );
+  };
+
   const handleSymbolPress = async (item, sourceName) => {
+    // --- LOGGING ---
+    console.log(
+      `[handleSymbolPress] Fired. Source: ${sourceName}, Item Name: ${
+        item.name || item["symbol-en"]
+      }`
+    );
+
     const uniqueId = `${sourceName}-${
       item.filename || item.hexcode || item.id || item["symbol-en"]
     }`;
 
     if (isMultiSelect) {
       if (selection.find((s) => s.uniqueId === uniqueId)) {
-        setSelection(selection.filter((s) => s.uniqueId !== uniqueId));
+        setSelection((prev) => prev.filter((s) => s.uniqueId !== uniqueId));
         return;
       }
 
       const selectionItem = {
-        ...item,
         uniqueId,
         sourceName,
         name: item["symbol-en"] || item.name || item.annotation || "untitled",
-        imageUrl: null,
+        imageUrl: item.imageUrl || null,
         localUri: null,
+        filename: item.filename,
+        hexcode: item.hexcode,
+        id: item.id,
       };
 
-      if (item.imageUrl) {
-        selectionItem.imageUrl = item.imageUrl;
-      } else {
+      if (!selectionItem.imageUrl) {
         const imageMap = {
           Mulberry: mulberryImages,
           OpenMoji: openmojiImages,
@@ -148,7 +181,6 @@ export default function PickerScreen() {
           Bliss: blissImages,
           "Noto Emoji": notoEmojiImages,
         };
-
         const keyMap = {
           Mulberry: item.filename,
           OpenMoji: item.hexcode,
@@ -157,9 +189,7 @@ export default function PickerScreen() {
           Bliss: item.filename,
           "Noto Emoji": item.filename,
         };
-
         const imageResource = imageMap[sourceName]?.[keyMap[sourceName]];
-
         if (imageResource) {
           try {
             const asset = Asset.fromModule(imageResource);
@@ -175,14 +205,28 @@ export default function PickerScreen() {
             return;
           }
         } else {
-          Alert.alert(
-            "Error",
-            `Could not find the image resource for selection.`
-          );
+          Alert.alert("Error", `Could not find image resource for selection.`);
           return;
         }
       }
-      setSelection([...selection, selectionItem]);
+
+      // --- LOGGING ---
+      console.log(
+        `[handleSymbolPress] Preparing to add item: ${selectionItem.name}`
+      );
+      setSelection((currentSelection) => {
+        // --- LOGGING ---
+        console.log(
+          "[setSelection] Previous state had names:",
+          JSON.stringify(currentSelection.map((s) => s.name))
+        );
+        const newState = [...currentSelection, selectionItem];
+        console.log(
+          "[setSelection] New state will have names:",
+          JSON.stringify(newState.map((s) => s.name))
+        );
+        return newState;
+      });
     } else {
       let symbolName =
         sourceName === "Mulberry" ? item["symbol-en"] : item.name;
@@ -191,16 +235,25 @@ export default function PickerScreen() {
   };
 
   const handleFlaticonSearch = async () => {
-    if (FLATICON_API_KEY === "YOUR_API_KEY_HERE" || !FLATICON_API_KEY) {
-      Alert.alert("API Key Needed", "Please add your Freepik API key.");
-      return;
+    let key = flaticonApiKey;
+    if (!key) {
+      const storedKey = await SecureStore.getItemAsync("flaticonApiKey");
+      if (storedKey) {
+        setFlaticonApiKey(storedKey);
+        key = storedKey;
+      } else {
+        promptForApiKey();
+        return;
+      }
     }
+
     const query = searchTerm.trim() || currentWord?.english || "";
     if (!query) return;
+
     setIsFlaticonLoading(true);
     setFlaticonResults([]);
     const headers = {
-      "x-freepik-api-key": FLATICON_API_KEY,
+      "x-freepik-api-key": key,
       Accept: "application/json",
     };
     try {
@@ -512,7 +565,6 @@ export default function PickerScreen() {
     }
   };
 
-  // New handler to save the note
   const handleSaveNote = () => {
     addNote(noteInput);
     Alert.alert("Note Saved!");
@@ -686,7 +738,7 @@ export default function PickerScreen() {
           placeholderTextColor="#888"
           value={noteInput}
           onChangeText={setNoteInput}
-          onSubmitEditing={handleSaveNote} // Optional: save on submit
+          onSubmitEditing={handleSaveNote}
         />
         <TouchableOpacity
           style={styles.saveNoteButton}

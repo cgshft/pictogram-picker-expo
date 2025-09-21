@@ -10,7 +10,6 @@ import {
   Image,
 } from "react-native";
 import { WebView } from "react-native-webview";
-// FIX: Import the legacy module for deprecated functions
 import * as FileSystem from "expo-file-system/legacy";
 import { Asset } from "expo-asset";
 
@@ -27,15 +26,15 @@ interface CombinePreviewModalProps {
 }
 
 // Helper to get a local file URI for an image asset
-const getLocalImageUri = async (item: any): Promise<string> => {
+// FIX 1: Accept the index to guarantee a unique filename
+const getLocalImageUri = async (item: any, index: number): Promise<string> => {
   if (item.localUri) return item.localUri;
 
-  // Handle remote images from APIs
   if (item.imageUrl) {
+    // FIX 2: Add the index to the temporary filename
     const tempFileUri =
-      FileSystem.cacheDirectory + `combine_remote_${Date.now()}.png`;
+      FileSystem.cacheDirectory + `combine_remote_${index}_${Date.now()}.png`;
     try {
-      // FIX: Use the legacy downloadAsync
       const { uri } = await FileSystem.downloadAsync(
         item.imageUrl,
         tempFileUri
@@ -47,7 +46,6 @@ const getLocalImageUri = async (item: any): Promise<string> => {
     }
   }
 
-  // Handle local, bundled images
   if (item.imageResource) {
     const asset = Asset.fromModule(item.imageResource);
     await asset.downloadAsync();
@@ -137,7 +135,10 @@ export default function CombinePreviewModal({
         setCombinedBase64(null);
         setHtmlToRender(null);
         try {
-          const uris = await Promise.all(selection.map(getLocalImageUri));
+          // Pass the index to the helper function
+          const uris = await Promise.all(
+            selection.map((item, index) => getLocalImageUri(item, index))
+          );
           const base64Sources = await Promise.all(
             uris.map((uri) =>
               FileSystem.readAsStringAsync(uri, {
@@ -263,4 +264,3 @@ const styles = StyleSheet.create({
     width: "100%",
   },
 });
-    
