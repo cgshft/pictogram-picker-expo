@@ -26,7 +26,6 @@ import { Asset } from "expo-asset";
 import {
   cacheApiResults,
   getRepositoryDirectory,
-  setupRepositoryAndGetFile,
   saveTextSymbol,
   saveCombinedSymbol,
   saveSingleApiSymbol,
@@ -51,7 +50,7 @@ import SymbolItem from "../components/SymbolItem";
 import TextSymbolModal from "../components/TextSymbolModal";
 import CombinePreviewModal from "../components/CombinePreviewModal";
 import SkeletonSymbolItem from "../components/SkeletonSymbolItem";
-import ApiKeyModal from "../components/ApiKeyModal"; // Import the new modal
+import ApiKeyModal from "../components/ApiKeyModal";
 
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
@@ -108,7 +107,7 @@ export default function PickerScreen() {
   const [selection, setSelection] = useState([]);
   const [isOrType, setIsOrType] = useState(true);
   const [isCombineModalVisible, setIsCombineModalVisible] = useState(false);
-  const [isApiKeyModalVisible, setIsApiKeyModalVisible] = useState(false); // State for the new modal
+  const [isApiKeyModalVisible, setIsApiKeyModalVisible] = useState(false);
   const [activeInput, setActiveInput] = useState<
     "search" | "text" | "note" | null
   >(null);
@@ -206,12 +205,10 @@ export default function PickerScreen() {
   const handleFlaticonSearch = async () => {
     try {
       const key = await SecureStore.getItemAsync("flaticonApiKey");
-
       if (!key) {
-        setIsApiKeyModalVisible(true); // Open the custom modal
+        setIsApiKeyModalVisible(true);
         return;
       }
-
       const query = searchTerm.trim() || currentWord?.english || "";
       if (!query) {
         Alert.alert(
@@ -220,25 +217,20 @@ export default function PickerScreen() {
         );
         return;
       }
-
       setIsFlaticonLoading(true);
       const headers = { "x-freepik-api-key": key, Accept: "application/json" };
-
       const searchUrl = `https://api.freepik.com/v1/icons?term=${encodeURIComponent(
         query
       )}&limit=16&order=relevance`;
       const searchResponse = await fetch(searchUrl, { headers });
       if (!searchResponse.ok)
         throw new Error(`Flaticon search failed: ${searchResponse.status}`);
-
       const searchJson = await searchResponse.json();
       const iconItems = (searchJson.data || []).slice(0, 4);
-
       if (iconItems.length === 0) {
         setSearchResults((prev) => ({ ...prev, Flaticon: [] }));
         return;
       }
-
       const downloadResponses = await Promise.all(
         iconItems.map((item) =>
           fetch(
@@ -247,7 +239,6 @@ export default function PickerScreen() {
           ).then((res) => res.json())
         )
       );
-
       const processedResults = downloadResponses
         .map((downloadRes, index) => {
           const originalItem = iconItems[index];
@@ -262,22 +253,11 @@ export default function PickerScreen() {
           };
         })
         .filter(Boolean) as any[];
-
       setSearchResults((prev) => ({ ...prev, Flaticon: processedResults }));
-
       if (processedResults.length > 0) {
         const repoDir = await getRepositoryDirectory();
-        const metadataFile = repoDir
-          ? await setupRepositoryAndGetFile(repoDir)
-          : null;
-        if (repoDir && metadataFile) {
-          cacheApiResults(
-            processedResults,
-            "Flaticon",
-            query,
-            repoDir,
-            metadataFile
-          );
+        if (repoDir) {
+          cacheApiResults(processedResults, "Flaticon", query, repoDir);
         }
       }
     } catch (error) {
@@ -305,7 +285,6 @@ export default function PickerScreen() {
     }
   };
 
-  // Other handlers...
   const performSearch = async (query: string) => {
     if (!query) {
       setSearchResults({});
@@ -328,13 +307,11 @@ export default function PickerScreen() {
     setSearchResults(localResults);
     setIsApiLoading(true);
     const repoDir = await getRepositoryDirectory();
-    const metadataFile = repoDir
-      ? await setupRepositoryAndGetFile(repoDir)
-      : null;
-    if (!repoDir || !metadataFile) {
+    if (!repoDir) {
       setIsApiLoading(false);
       return;
     }
+
     const arasaacPromise = fetch(
       `https://api.arasaac.org/api/pictograms/en/search/${encodeURIComponent(
         query
@@ -355,7 +332,7 @@ export default function PickerScreen() {
           }));
         if (results.length > 0) {
           setSearchResults((prev) => ({ ...prev, ARASAAC: results }));
-          cacheApiResults(results, "ARASAAC", query, repoDir, metadataFile);
+          cacheApiResults(results, "ARASAAC", query, repoDir);
         }
       })
       .catch((e) => console.error("ARASAAC fetch failed:", e));
@@ -375,14 +352,16 @@ export default function PickerScreen() {
           .slice(0, 4);
         if (results.length > 0) {
           setSearchResults((prev) => ({ ...prev, AACIL: results }));
-          cacheApiResults(results, "AACIL", query, repoDir, metadataFile);
+          cacheApiResults(results, "AACIL", query, repoDir);
         }
       })
       .catch((e) => console.error("AACIL fetch failed:", e));
+
     Promise.allSettled([arasaacPromise, aacilPromise]).finally(() => {
       setIsApiLoading(false);
     });
   };
+
   const handleSymbolPress = async (item, sourceName) => {
     const uniqueId = `${sourceName}-${
       item.filename || item.hexcode || item.id || item["symbol-en"]
@@ -517,32 +496,6 @@ export default function PickerScreen() {
       }
     }
   };
-  const handleExportMetadata = async () => {
-    if (Platform.OS === "web") {
-      alert("Metadata export is a mobile-only feature.");
-      return;
-    }
-    try {
-      const repoDir = await getRepositoryDirectory();
-      if (!repoDir) return;
-      const contents = await repoDir.list();
-      const metadataFile = contents.find(
-        (item) =>
-          item.name === "api_symbol_metadata.csv" && item instanceof File
-      );
-      if (!metadataFile) {
-        alert("Metadata log not found.");
-        return;
-      }
-      await Sharing.shareAsync(metadataFile.uri, {
-        mimeType: "text/csv",
-        dialogTitle: "Export your symbol metadata log",
-      });
-    } catch (error) {
-      console.error("Error exporting metadata file:", error);
-      alert("Failed to export metadata CSV.");
-    }
-  };
   const handleSaveNote = () => {
     addNote(noteInput);
     setActiveInput(null);
@@ -577,9 +530,8 @@ export default function PickerScreen() {
     setIsCombineModalVisible(true);
   };
   const handleExportPress = () => {
-    Alert.alert("Export Data", "Choose what you would like to export:", [
+    Alert.alert("Export Data", "What would you like to export?", [
       { text: "Export Deck (.csv)", onPress: () => handleExport() },
-      { text: "Export API Log (.csv)", onPress: () => handleExportMetadata() },
       { text: "Cancel", style: "cancel" },
     ]);
   };
@@ -589,8 +541,15 @@ export default function PickerScreen() {
   };
 
   const screenOptions = useMemo(
-    () => ({ title: deckName, headerRight: () => null }),
-    [deckName]
+    () => ({
+      title: deckName,
+      headerRight: () => (
+        <View style={{ flexDirection: "row" }}>
+          <Button onPress={handleExport} title="Export Deck" />
+        </View>
+      ),
+    }),
+    [deckName, deckData]
   );
   if (!isLoaded || deckData.length === 0) {
     return (
@@ -602,6 +561,7 @@ export default function PickerScreen() {
   const isAtStart = currentIndex === 0;
   const isAtEnd = currentIndex === deckData.length - 1;
 
+  // The rest of the JSX and styles remain the same
   return (
     <View style={styles.container}>
       <Stack.Screen options={screenOptions} />
@@ -921,7 +881,6 @@ export default function PickerScreen() {
         onClose={() => setIsTextModalVisible(false)}
         onSave={handleSaveTextSymbol}
       />
-      {/* ADDED: The new API Key Modal */}
       <ApiKeyModal
         visible={isApiKeyModalVisible}
         onClose={() => setIsApiKeyModalVisible(false)}

@@ -1,15 +1,10 @@
-// services/cachingService.ts
-
 import { Directory, File } from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import Papa from 'papaparse';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const METADATA_CSV_FILENAME = "api_symbol_metadata.csv";
 const STORAGE_KEY = "@SymbolPickerRepoDirectoryUri";
-
-let metadataFileHandle: File | null = null;
 
 export const getRepositoryDirectory = async (): Promise<Directory | null> => {
   try {
@@ -33,75 +28,100 @@ export const getRepositoryDirectory = async (): Promise<Directory | null> => {
   return null;
 };
 
-export const setupRepositoryAndGetFile = async (repoDir: Directory): Promise<File | null> => {
-    if (metadataFileHandle) return metadataFileHandle;
-    try {
-        const files = await FileSystemLegacy.StorageAccessFramework.readDirectoryAsync(repoDir.uri);
-        const metadataFileUri = files.find(uri => uri.endsWith(METADATA_CSV_FILENAME));
-
-        if (metadataFileUri) {
-            metadataFileHandle = new File(metadataFileUri);
-        } else {
-            const newFileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(repoDir.uri, METADATA_CSV_FILENAME, 'text/csv');
-            const headers = Papa.unparse([{ timestamp: '', search_query: '', source: '', symbol_name: '', symbol_id: '', original_url: '', saved_path: '' }]);
-            await FileSystemLegacy.writeAsStringAsync(newFileUri, headers, { encoding: 'utf8' });
-            metadataFileHandle = new File(newFileUri);
-        }
-        return metadataFileHandle;
-    } catch (e) {
-        console.error('[Cache Service] CRITICAL ERROR in setupRepository:', e);
-        Alert.alert("Permission Error", `Could not create necessary metadata files. Please try re-selecting the folder from the home screen to grant permissions again.`);
-        return null;
+// --- UPDATED HELPER: Now returns both the metadata file and its parent directory ---
+const getOrCreateMetadataFileForSource = async (
+  repoDir: Directory,
+  sourceName: string
+): Promise<{ metadataFile: File; sourceDir: Directory } | null> => {
+  try {
+    const repoContents = await repoDir.list();
+    let sourceDir = repoContents.find(
+      (item) => item.name === sourceName && item instanceof Directory
+    ) as Directory;
+    if (!sourceDir) {
+      sourceDir = await repoDir.createDirectory(sourceName);
     }
+
+    const metadataFilename = `_${sourceName}_metadata.csv`;
+    
+    const sourceDirFiles = await FileSystemLegacy.StorageAccessFramework.readDirectoryAsync(sourceDir.uri);
+    const existingFileUri = sourceDirFiles.find(uri => uri.endsWith(metadataFilename));
+
+    let finalFileUri: string;
+
+    if (existingFileUri) {
+      finalFileUri = existingFileUri;
+    } else {
+      finalFileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(
+        sourceDir.uri,
+        metadataFilename,
+        'text/csv'
+      );
+      const headers = Papa.unparse([{ timestamp: '', search_query: '', source: '', symbol_name: '', symbol_id: '', original_url: '', saved_path: '' }]);
+      await FileSystemLegacy.writeAsStringAsync(finalFileUri, headers, { encoding: 'utf8' });
+    }
+    
+    return { metadataFile: new File(finalFileUri), sourceDir };
+
+  } catch (e) {
+    console.error(`Error setting up metadata for ${sourceName}:`, e);
+    Alert.alert("Metadata Error", `Could not create or access metadata file for ${sourceName}.`);
+    return null;
+  }
 };
 
-export const cacheApiResults = async (results, sourceName, searchQuery, repoDir, metadataFile) => {
-    if (Platform.OS === 'web' || !results || results.length === 0) return;
-    if (!repoDir || !metadataFile) return;
 
-    try {
-        let sourceDir = (await repoDir.list()).find(item => item.name === sourceName && item instanceof Directory) as Directory;
-        if (!sourceDir) {
-            sourceDir = await repoDir.createDirectory(sourceName);
-        }
-        const sourceDirContents = await sourceDir.list();
-        const newMetadataRows = [];
-        for (const result of results) {
-            const { id, name, imageUrl } = result.item;
-            try {
-                const response = await fetch(imageUrl);
-                if (!response.ok) continue;
-                const contentType = response.headers.get('content-type') || 'application/octet-stream';
-                let fileExtension = 'png';
-                if (contentType.includes('image/svg')) fileExtension = 'svg';
-                else if (contentType.includes('image/jpeg')) fileExtension = 'jpg';
-                
-                const safeName = (name || 'untitled').replace(/[^a-zA-Z0-9]/g, '_');
-                const localFilename = `${safeName}_${id}.${fileExtension}`;
+export const cacheApiResults = async (results, sourceName, searchQuery, repoDir: Directory) => {
+  if (Platform.OS === 'web' || !results || results.length === 0 || !repoDir) return;
 
-                if (sourceDirContents.some(item => item.name === localFilename)) continue;
-                
-                const destinationFile = await sourceDir.createFile(localFilename, contentType);
-                const imageBytes = await response.arrayBuffer();
-                await destinationFile.write(new Uint8Array(imageBytes));
-                
-                newMetadataRows.push({
-                    timestamp: new Date().toISOString(), search_query: searchQuery, source: sourceName,
-                    symbol_name: name, symbol_id: id, original_url: imageUrl, saved_path: destinationFile.uri,
-                });
-            } catch (e) {
-                console.error(`Failed to download/save symbol: ${name}`, e);
-            }
+  try {
+    const dirAndFile = await getOrCreateMetadataFileForSource(repoDir, sourceName);
+    if (!dirAndFile) { return; }
+    const { metadataFile, sourceDir } = dirAndFile; // Use the returned sourceDir
+
+    const newMetadataRows = [];
+
+    for (const result of results) {
+      const { id, name, imageUrl } = result.item;
+      try {
+        let fileExtension = 'png';
+        if (imageUrl.includes('.svg')) fileExtension = 'svg';
+        else if (imageUrl.includes('.jpg') || imageUrl.includes('.jpeg')) fileExtension = 'jpg';
+        
+        const safeName = (name || 'untitled').replace(/[^a-zA-Z0-9]/g, '_');
+        const finalFilename = `${safeName}_${id}.${fileExtension}`;
+
+        // Create the image file in the correct subdirectory
+        const fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(sourceDir.uri, finalFilename, `image/${fileExtension}`);
+        
+        const response = await fetch(imageUrl);
+        const base64Data = await response.blob().then(blob => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        })) as string;
+
+        await FileSystemLegacy.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' });
+        
+        newMetadataRows.push({
+          timestamp: new Date().toISOString(), search_query: searchQuery, source: sourceName,
+          symbol_name: name, symbol_id: id, original_url: imageUrl, saved_path: fileUri,
+        });
+      } catch (e) {
+        if (!e.message.includes('file already exists')) {
+            console.error(`Failed to download/save symbol: ${name}`, e);
         }
-        if (newMetadataRows.length > 0) {
-            const newCsvString = Papa.unparse(newMetadataRows, { header: false });
-            const existingContent = await metadataFile.text();
-            const finalContent = existingContent.trim() + '\n' + newCsvString;
-            await metadataFile.write(finalContent);
-        }
-    } catch (e) {
-        Alert.alert("Cache Error", `Failed to save symbols. ${e.message}`);
+      }
     }
+
+    if (newMetadataRows.length > 0) {
+      const newCsvString = Papa.unparse(newMetadataRows, { header: false });
+      await FileSystemLegacy.writeAsStringAsync(metadataFile.uri, `\n${newCsvString}`, { encoding: 'utf8', append: true });
+    }
+  } catch (e) {
+    Alert.alert("Cache Error", `Failed to save symbols. ${e.message}`);
+  }
 };
 
 const saveDataWithSAF = async ( repoDir: Directory, subdirectory: string, base64Data: string, symbolName: string ): Promise<{ fileUri: string; filename: string } | null> => {
@@ -125,9 +145,7 @@ const saveDataWithSAF = async ( repoDir: Directory, subdirectory: string, base64
     );
 
     await FileSystemLegacy.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' });
-
     return { fileUri, filename: `${subdirectory}/${finalFilename}` };
-
   } catch (e) {
     console.error(`Failed to save symbol to ${subdirectory}:`, e);
     Alert.alert("Save Error", `Could not save the symbol. ${e.message}`);
@@ -135,41 +153,46 @@ const saveDataWithSAF = async ( repoDir: Directory, subdirectory: string, base64
   }
 };
 
-// --- NEW HELPER FUNCTION ---
 export const saveSingleApiSymbol = async (
     repoDir: Directory,
     item: { id: any; name: string; imageUrl: string },
     sourceName: string
   ): Promise<{ fileUri: string; filename: string } | null> => {
     try {
-      const repoContents = await repoDir.list();
-      let sourceDir = repoContents.find(
-        (d) => d.name === sourceName && d instanceof Directory
-      ) as Directory;
-      if (!sourceDir) {
-        sourceDir = await repoDir.createDirectory(sourceName);
-      }
-  
-      const response = await fetch(item.imageUrl);
-      if (!response.ok) throw new Error("Failed to fetch image.");
-      const contentType = response.headers.get('content-type') || 'application/octet-stream';
+      const dirAndFile = await getOrCreateMetadataFileForSource(repoDir, sourceName);
+      if (!dirAndFile) throw new Error(`Could not get or create metadata file for ${sourceName}.`);
+      const { metadataFile, sourceDir } = dirAndFile; // Use the returned sourceDir
+
       let fileExtension = 'png';
-      if (contentType.includes('svg')) fileExtension = 'svg';
-      else if (contentType.includes('jpeg')) fileExtension = 'jpg';
+      if (item.imageUrl.includes('.svg')) fileExtension = 'svg';
+      else if (item.imageUrl.includes('.jpg') || item.imageUrl.includes('.jpeg')) fileExtension = 'jpg';
       
       const safeName = (item.name || 'untitled').replace(/[^a-zA-Z0-9]/g, '_');
       const finalFilename = `${safeName}_${item.id}.${fileExtension}`;
   
-      const destinationFile = await sourceDir.createFile(finalFilename, contentType);
-      const imageBytes = await response.arrayBuffer();
-      await destinationFile.write(new Uint8Array(imageBytes));
+      const fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(sourceDir.uri, finalFilename, `image/${fileExtension}`);
+
+      const response = await fetch(item.imageUrl);
+      const base64Data = await response.blob().then(blob => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      })) as string;
+
+      await FileSystemLegacy.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' });
+
+      const newMetadataRow = [{ timestamp: new Date().toISOString(), search_query: 'single_selection', source: sourceName, symbol_name: item.name, symbol_id: item.id, original_url: item.imageUrl, saved_path: fileUri }];
+      const newCsvString = Papa.unparse(newMetadataRow, { header: false });
+      await FileSystemLegacy.writeAsStringAsync(metadataFile.uri, `\n${newCsvString}`, { encoding: 'utf8', append: true });
   
-      console.log(`Saved new single API symbol to: ${destinationFile.uri}`);
-      return { fileUri: destinationFile.uri, filename: `${sourceName}/${finalFilename}` };
+      return { fileUri: fileUri, filename: `${sourceName}/${finalFilename}` };
   
     } catch (e) {
-      console.error(`Failed to save single API symbol: ${item.name}`, e);
-      Alert.alert("Save Error", `Could not save the symbol for ${item.name}.`);
+      if (!e.message.includes('file already exists')) {
+        console.error(`Failed to save single API symbol: ${item.name}`, e);
+        Alert.alert("Save Error", `Could not save the symbol for ${item.name}.`);
+      }
       return null;
     }
   };
