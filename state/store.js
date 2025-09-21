@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Key for storing the deck state in AsyncStorage
 const DECK_STORAGE_KEY = '@CurrentDeckState';
 
 export const useDeckStore = create((set, get) => ({
@@ -38,8 +39,8 @@ export const useDeckStore = create((set, get) => ({
     let finalFilename = customFilename;
     if (!finalFilename) {
       const sanitizedWord = (currentWord.english || `entry${currentIndex}`).replace(/[^a-zA-Z0-9]/g, '_');
-      // UPDATED: Changed fallback extension from .svg to .png
-      finalFilename = `${sanitizedWord}_${source}_${symbolName}.png`;
+      const extension = source === "Mulberry" ? 'png' : 'svg';
+      finalFilename = `${sanitizedWord}_${source}_${symbolName}.${extension}`;
     }
 
     const newData = [...deckData];
@@ -52,6 +53,19 @@ export const useDeckStore = create((set, get) => ({
     
     set({ deckData: newData });
     nextWord();
+  },
+  
+  // **NEW ACTION TO ADD A NOTE**
+  addNote: (noteText) => {
+    const { deckData, currentIndex } = get();
+    const newData = [...deckData];
+    
+    // Ensure the 'notes' property exists on the current object
+    if (newData[currentIndex]) {
+        newData[currentIndex].notes = noteText;
+        set({ deckData: newData });
+        console.log(`Note added for index ${currentIndex}: ${noteText}`);
+    }
   },
   
   restoreState: async () => {
@@ -83,6 +97,7 @@ export const useDeckStore = create((set, get) => ({
   }
 }));
 
+// Subscribe to state changes for persistence
 useDeckStore.subscribe(
   (state) => {
     if (state.isLoaded && state.deckData.length > 0) {

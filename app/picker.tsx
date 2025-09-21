@@ -1,4 +1,3 @@
-// app/picker.tsx
 import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
@@ -21,7 +20,7 @@ import Fuse from "fuse.js";
 import * as Sharing from "expo-sharing";
 import { File, Paths } from "expo-file-system";
 import Papa from "papaparse";
-import { Asset } from "expo-asset"; // Import the Asset module
+import { Asset } from "expo-asset";
 import {
   cacheApiResults,
   getRepositoryDirectory,
@@ -51,7 +50,6 @@ import SymbolItem from "../components/SymbolItem";
 import TextSymbolModal from "../components/TextSymbolModal";
 import CombinePreviewModal from "../components/CombinePreviewModal";
 
-// --- (Fuse.js setup remains the same) ---
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
   includeScore: true,
@@ -97,6 +95,7 @@ export default function PickerScreen() {
   const [selection, setSelection] = useState([]);
   const [isOrType, setIsOrType] = useState(true);
   const [isCombineModalVisible, setIsCombineModalVisible] = useState(false);
+  const [noteInput, setNoteInput] = useState(""); // State for the note input
 
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
@@ -105,9 +104,19 @@ export default function PickerScreen() {
   const nextWord = useDeckStore((state) => state.nextWord);
   const prevWord = useDeckStore((state) => state.prevWord);
   const selectSymbol = useDeckStore((state) => state.selectSymbol);
+  const addNote = useDeckStore((state) => state.addNote); // Get the new action
 
   const currentWord = deckData[currentIndex];
 
+  // Effect to update the note input when the current word changes
+  useEffect(() => {
+    if (currentWord) {
+      setNoteInput(currentWord.notes || "");
+    }
+  }, [currentWord]);
+
+  // All handler functions (handleSymbolPress, handleFlaticonSearch, etc.) remain the same...
+  // ... (paste your existing handler functions here)
   const handleSymbolPress = async (item, sourceName) => {
     const uniqueId = `${sourceName}-${
       item.filename || item.hexcode || item.id || item["symbol-en"]
@@ -503,6 +512,12 @@ export default function PickerScreen() {
     }
   };
 
+  // New handler to save the note
+  const handleSaveNote = () => {
+    addNote(noteInput);
+    Alert.alert("Note Saved!");
+  };
+
   if (!isLoaded || deckData.length === 0) {
     return (
       <View style={styles.container}>
@@ -662,6 +677,25 @@ export default function PickerScreen() {
           </View>
         </View>
       )}
+
+      {/* ADDED NOTES SECTION */}
+      <View style={styles.notesContainer}>
+        <TextInput
+          style={styles.notesInput}
+          placeholder="Add a note for this word..."
+          placeholderTextColor="#888"
+          value={noteInput}
+          onChangeText={setNoteInput}
+          onSubmitEditing={handleSaveNote} // Optional: save on submit
+        />
+        <TouchableOpacity
+          style={styles.saveNoteButton}
+          onPress={handleSaveNote}
+        >
+          <Text style={styles.navButtonText}>Save Note</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.navContainer}>
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
@@ -678,6 +712,7 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>{"Next >>"}</Text>
         </TouchableOpacity>
       </View>
+
       <CombinePreviewModal
         visible={isCombineModalVisible}
         selection={selection}
@@ -797,4 +832,29 @@ const styles = StyleSheet.create({
   },
   switchRow: { flexDirection: "row", alignItems: "center" },
   label: { color: "#ccc", marginRight: 10 },
+  // ADDED STYLES FOR NOTES SECTION
+  notesContainer: {
+    flexDirection: "row",
+    width: "100%",
+    paddingHorizontal: 10,
+    marginVertical: 10,
+    alignItems: "center",
+  },
+  notesInput: {
+    flex: 1,
+    backgroundColor: "#333",
+    color: "white",
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginRight: 10,
+  },
+  saveNoteButton: {
+    backgroundColor: "#FF9500", // Orange color for visibility
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    justifyContent: "center",
+  },
 });
