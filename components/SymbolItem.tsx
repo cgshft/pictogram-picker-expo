@@ -94,7 +94,7 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
   return (
     <TouchableOpacity style={styles.container} onPress={onPress}>
       <View style={styles.imageContainer}>{imageContent}</View>
-      <Text style={styles.sourceText}>{source}</Text>
+      {/* <Text style={styles.sourceText}>{source}</Text> */}
       <Text style={styles.text} numberOfLines={1} ellipsizeMode="tail">
         {name}
       </Text>
@@ -104,25 +104,26 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
 
 const styles = StyleSheet.create({
   container: {
-    width: 120,
-    height: 140,
-    padding: 5,
-    margin: 5,
+    width: 80,
+    height: 100,
+    padding: 0,
+    margin: 3,
     alignItems: "center",
     backgroundColor: "#2C2C2E",
+    // backgroundColor: "#2C2C2E",
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#444",
+    // borderWidth: 1,
+    // borderColor: "#444",
   },
   imageContainer: {
-    width: "100%",
-    height: 80,
+    width: '90%',
+    height: '80%',
     alignItems: "center",
     justifyContent: "center",
   },
   image: {
-    width: "80%",
-    height: "80%",
+    width: "100%",
+    height: "100%",
   },
   text: {
     color: "#E5E5EA",
