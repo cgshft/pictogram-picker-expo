@@ -28,7 +28,7 @@ export const getRepositoryDirectory = async (): Promise<Directory | null> => {
   return null;
 };
 
-// --- UPDATED HELPER: Now returns both the metadata file and its parent directory ---
+// This helper now returns BOTH the metadata file and its parent source directory
 const getOrCreateMetadataFileForSource = async (
   repoDir: Directory,
   sourceName: string
@@ -43,7 +43,6 @@ const getOrCreateMetadataFileForSource = async (
     }
 
     const metadataFilename = `_${sourceName}_metadata.csv`;
-    
     const sourceDirFiles = await FileSystemLegacy.StorageAccessFramework.readDirectoryAsync(sourceDir.uri);
     const existingFileUri = sourceDirFiles.find(uri => uri.endsWith(metadataFilename));
 
@@ -57,8 +56,7 @@ const getOrCreateMetadataFileForSource = async (
         metadataFilename,
         'text/csv'
       );
-      const headers = Papa.unparse([{ timestamp: '', search_query: '', source: '', symbol_name: '', symbol_id: '', original_url: '', saved_path: '' }]);
-      await FileSystemLegacy.writeAsStringAsync(finalFileUri, headers, { encoding: 'utf8' });
+      // Removed header logic as requested
     }
     
     return { metadataFile: new File(finalFileUri), sourceDir };
@@ -70,14 +68,14 @@ const getOrCreateMetadataFileForSource = async (
   }
 };
 
-
 export const cacheApiResults = async (results, sourceName, searchQuery, repoDir: Directory) => {
   if (Platform.OS === 'web' || !results || results.length === 0 || !repoDir) return;
 
   try {
     const dirAndFile = await getOrCreateMetadataFileForSource(repoDir, sourceName);
     if (!dirAndFile) { return; }
-    const { metadataFile, sourceDir } = dirAndFile; // Use the returned sourceDir
+    // Deconstruct the return object to get the reliable sourceDir
+    const { metadataFile, sourceDir } = dirAndFile;
 
     const newMetadataRows = [];
 
@@ -91,7 +89,7 @@ export const cacheApiResults = async (results, sourceName, searchQuery, repoDir:
         const safeName = (name || 'untitled').replace(/[^a-zA-Z0-9]/g, '_');
         const finalFilename = `${safeName}_${id}.${fileExtension}`;
 
-        // Create the image file in the correct subdirectory
+        // FIX: Use the reliable sourceDir.uri to save the image file
         const fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(sourceDir.uri, finalFilename, `image/${fileExtension}`);
         
         const response = await fetch(imageUrl);
@@ -107,6 +105,7 @@ export const cacheApiResults = async (results, sourceName, searchQuery, repoDir:
         newMetadataRows.push({
           timestamp: new Date().toISOString(), search_query: searchQuery, source: sourceName,
           symbol_name: name, symbol_id: id, original_url: imageUrl, saved_path: fileUri,
+          filename: finalFilename
         });
       } catch (e) {
         if (!e.message.includes('file already exists')) {
@@ -117,7 +116,7 @@ export const cacheApiResults = async (results, sourceName, searchQuery, repoDir:
 
     if (newMetadataRows.length > 0) {
       const newCsvString = Papa.unparse(newMetadataRows, { header: false });
-      await FileSystemLegacy.writeAsStringAsync(metadataFile.uri, `\n${newCsvString}`, { encoding: 'utf8', append: true });
+      await FileSystemLegacy.writeAsStringAsync(metadataFile.uri, newCsvString + '\n', { encoding: 'utf8', append: true });
     }
   } catch (e) {
     Alert.alert("Cache Error", `Failed to save symbols. ${e.message}`);
@@ -161,7 +160,8 @@ export const saveSingleApiSymbol = async (
     try {
       const dirAndFile = await getOrCreateMetadataFileForSource(repoDir, sourceName);
       if (!dirAndFile) throw new Error(`Could not get or create metadata file for ${sourceName}.`);
-      const { metadataFile, sourceDir } = dirAndFile; // Use the returned sourceDir
+      // Deconstruct the return object to get the reliable sourceDir
+      const { metadataFile, sourceDir } = dirAndFile;
 
       let fileExtension = 'png';
       if (item.imageUrl.includes('.svg')) fileExtension = 'svg';
@@ -170,6 +170,7 @@ export const saveSingleApiSymbol = async (
       const safeName = (item.name || 'untitled').replace(/[^a-zA-Z0-9]/g, '_');
       const finalFilename = `${safeName}_${item.id}.${fileExtension}`;
   
+      // FIX: Use the reliable sourceDir.uri to save the image file
       const fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(sourceDir.uri, finalFilename, `image/${fileExtension}`);
 
       const response = await fetch(item.imageUrl);
@@ -182,9 +183,18 @@ export const saveSingleApiSymbol = async (
 
       await FileSystemLegacy.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' });
 
-      const newMetadataRow = [{ timestamp: new Date().toISOString(), search_query: 'single_selection', source: sourceName, symbol_name: item.name, symbol_id: item.id, original_url: item.imageUrl, saved_path: fileUri }];
+      const newMetadataRow = [{ 
+          timestamp: new Date().toISOString(), 
+          search_query: 'single_selection', 
+          source: sourceName, 
+          symbol_name: item.name, 
+          symbol_id: item.id, 
+          original_url: item.imageUrl, 
+          saved_path: fileUri,
+          filename: finalFilename 
+        }];
       const newCsvString = Papa.unparse(newMetadataRow, { header: false });
-      await FileSystemLegacy.writeAsStringAsync(metadataFile.uri, `\n${newCsvString}`, { encoding: 'utf8', append: true });
+      await FileSystemLegacy.writeAsStringAsync(metadataFile.uri, newCsvString + '\n', { encoding: 'utf8', append: true });
   
       return { fileUri: fileUri, filename: `${sourceName}/${finalFilename}` };
   
