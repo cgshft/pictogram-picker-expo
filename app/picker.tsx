@@ -98,7 +98,6 @@ export default function PickerScreen() {
   const [activeInput, setActiveInput] = useState<
     "search" | "text" | "note" | null
   >(null);
-  // New state for the expanded toolbar
   const [isToolbarExpanded, setIsToolbarExpanded] = useState(false);
 
   const deckData = useDeckStore((state) => state.deckData);
@@ -118,7 +117,7 @@ export default function PickerScreen() {
     }
   }, [currentWord]);
 
-  // --- HANDLERS (Most are unchanged) ---
+  // --- HANDLERS (Unchanged logic) ---
   const promptForApiKey = () => {
     Alert.prompt(
       "Enter API Key",
@@ -166,7 +165,6 @@ export default function PickerScreen() {
           Picom: item.filename,
           Sclera: item.filename,
           Bliss: item.filename,
-          "Noto Emoji": item.filename,
         };
         const imageResource = imageMap[sourceName]?.[keyMap[sourceName]];
         if (imageResource) {
@@ -494,6 +492,13 @@ export default function PickerScreen() {
     }
     setIsCombineModalVisible(true);
   };
+  const handleExportPress = () => {
+    Alert.alert("Export Data", "Choose what you would like to export:", [
+      { text: "Export Deck (.csv)", onPress: () => handleExport() },
+      { text: "Export API Log (.csv)", onPress: () => handleExportMetadata() },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
 
   useEffect(() => {
     const newWordQuery = deckData[currentIndex]?.english;
@@ -503,24 +508,10 @@ export default function PickerScreen() {
     }
   }, [currentIndex, deckData]);
 
-  // New handler for the consolidated export button
-  const handleExportPress = () => {
-    Alert.alert("Export Data", "Choose what you would like to export:", [
-      { text: "Export Deck (.csv)", onPress: () => handleExport() },
-      { text: "Export API Log (.csv)", onPress: () => handleExportMetadata() },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  };
-
   const screenOptions = useMemo(
-    () => ({
-      title: deckName,
-      // Remove headerRight to move buttons into the main UI
-      headerRight: () => null,
-    }),
+    () => ({ title: deckName, headerRight: () => null }),
     [deckName]
   );
-
   if (!isLoaded || deckData.length === 0) {
     return (
       <View style={styles.container}>
@@ -534,7 +525,6 @@ export default function PickerScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={screenOptions} />
-
       <View style={styles.wordContainer}>
         <View style={styles.wordInfoRow}>
           <Text style={styles.statusText}>
@@ -551,10 +541,7 @@ export default function PickerScreen() {
           <Text style={styles.noteTextDisplay}>Note: {currentWord.notes}</Text>
         ) : null}
       </View>
-
-      {/* --- REFACTORED TWO-TIER TOOLBAR --- */}
       <View style={styles.toolbarContainer}>
-        {/* Primary Toolbar */}
         <View style={styles.primaryToolbar}>
           <TouchableOpacity
             style={styles.toolbarButton}
@@ -635,8 +622,6 @@ export default function PickerScreen() {
             <Text style={styles.toolbarLabel}>More</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Secondary (Collapsible) Toolbar */}
         {isToolbarExpanded && (
           <View style={styles.secondaryToolbar}>
             <TouchableOpacity
@@ -664,7 +649,6 @@ export default function PickerScreen() {
           </View>
         )}
       </View>
-
       {activeInput === "search" && (
         <View style={styles.inputContainer}>
           <TextInput
@@ -723,8 +707,12 @@ export default function PickerScreen() {
       >
         {Object.keys(searchResults).map((sourceName) => (
           <View key={sourceName} style={styles.sourceContainer}>
-            <Text style={styles.sourceHeader}>{sourceName}</Text>
+            {/* --- UPDATED: Vertical Header Layout --- */}
+            <View style={styles.sourceHeaderContainer}>
+              <Text style={styles.sourceHeaderText}>{sourceName}</Text>
+            </View>
             <FlatList
+              style={{ flex: 1 }} // Ensure list takes remaining space
               data={searchResults[sourceName]}
               renderItem={({ item }) => (
                 <SymbolItem
@@ -744,13 +732,13 @@ export default function PickerScreen() {
         {isApiLoading && (
           <ActivityIndicator style={{ margin: 20 }} size="large" />
         )}
-        {isFlaticonLoading && (
-          <ActivityIndicator style={{ margin: 20 }} size="large" />
-        )}
-        {!isFlaticonLoading && flaticonResults.length > 0 && (
+        {isFlaticonLoading && !isApiLoading && (
           <View style={styles.sourceContainer}>
-            <Text style={styles.sourceHeader}>Flaticon</Text>
+            <View style={styles.sourceHeaderContainer}>
+              <Text style={styles.sourceHeaderText}>Flaticon</Text>
+            </View>
             <FlatList
+              style={{ flex: 1 }}
               data={flaticonResults}
               renderItem={({ item }) => (
                 <SymbolItem
@@ -819,7 +807,6 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>{"Next >>"}</Text>
         </TouchableOpacity>
       </View>
-
       <CombinePreviewModal
         visible={isCombineModalVisible}
         selection={selection}
@@ -861,7 +848,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
   },
-  // --- UPDATED & NEW TOOLBAR STYLES ---
   toolbarContainer: {
     backgroundColor: "#2C2C2E",
     borderRadius: 8,
@@ -880,25 +866,10 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#444",
   },
-  toolbarButton: {
-    flex: 1,
-    alignItems: "center",
-    padding: 4,
-  },
-  toolbarLabel: {
-    color: "white",
-    fontSize: 10,
-    marginTop: 2,
-  },
-  toolbarLabelActive: {
-    color: "#007AFF",
-    fontSize: 10,
-    marginTop: 2,
-  },
-  multiSelectActiveButton: {
-    backgroundColor: "#007AFF",
-    borderRadius: 6,
-  },
+  toolbarButton: { flex: 1, alignItems: "center", padding: 4 },
+  toolbarLabel: { color: "white", fontSize: 10, marginTop: 2 },
+  toolbarLabelActive: { color: "#007AFF", fontSize: 10, marginTop: 2 },
+  multiSelectActiveButton: { backgroundColor: "#007AFF", borderRadius: 6 },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -921,17 +892,30 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   resultsScrollView: { flex: 1, width: "100%" },
-  sourceContainer: { marginBottom: 20 },
-  sourceHeader: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "bold",
-    marginLeft: 15,
-    marginBottom: 5,
+  // --- UPDATED Styles for Vertical Headers ---
+  sourceContainer: {
+    flexDirection: "row", // Children side-by-side
+    alignItems: "center", // Vertically center the header with the list
+    marginBottom: 10,
   },
+  sourceHeaderContainer: {
+    width: 15, // Fixed width for the vertical label
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 5,
+  },
+  sourceHeaderText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "bold",
+    transform: [{ rotate: "-90deg" }], // Rotate the text
+    width: 140, // This becomes the "height" of the vertical text
+    textAlign: "center",
+  },
+  // ---
   navContainer: {
     flexDirection: "row",
-    justifyContent: "space-evenly",
+    justifyContent: "space-between",
     width: "100%",
     paddingTop: 10,
     borderTopColor: "#333",
