@@ -55,17 +55,24 @@ export const useDeckStore = create((set, get) => ({
     nextWord();
   },
   
-  // **NEW ACTION TO ADD A NOTE**
+  // **UPDATED ACTION TO ADD A NOTE**
   addNote: (noteText) => {
-    const { deckData, currentIndex } = get();
-    const newData = [...deckData];
-    
-    // Ensure the 'notes' property exists on the current object
-    if (newData[currentIndex]) {
-        newData[currentIndex].notes = noteText;
-        set({ deckData: newData });
-        console.log(`Note added for index ${currentIndex}: ${noteText}`);
-    }
+    set((state) => {
+      // Create a shallow copy of the deck data array
+      const newData = [...state.deckData];
+      const currentItem = newData[state.currentIndex];
+
+      // Ensure the item exists before updating
+      if (currentItem) {
+        // Create a new object for the updated item to ensure state changes are detected
+        newData[state.currentIndex] = { ...currentItem, notes: noteText };
+        console.log(`Note added for index ${state.currentIndex}: ${noteText}`);
+        return { deckData: newData };
+      }
+      
+      // If no item found, return an empty object to signify no state change
+      return {}; 
+    });
   },
   
   restoreState: async () => {
