@@ -950,7 +950,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   sourceHeaderContainer: {
-    width: 25,
+    width: 15,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 5,
