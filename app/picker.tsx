@@ -32,27 +32,24 @@ import {
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 
-// Local Symbol Data (imports remain the same)
+// Local Symbol Data & Components (imports remain the same)
 import { mulberryData } from "../assets/mulberrySymbols.js";
 import { openmojiData } from "../assets/openmojiSymbols.js";
 import { picomData } from "../assets/picomSymbols.js";
 import { scleraData } from "../assets/scleraSymbols.js";
 import { blissData } from "../assets/blissSymbols.js";
 import { notoEmojiData } from "../assets/notoEmojiSymbols.js";
-
-// Local Symbol Image Data (imports remain the same)
 import { mulberryImages } from "../assets/mulberryImages.js";
 import { openmojiImages } from "../assets/openmojiImages.js";
 import { picomImages } from "../assets/picomImages.js";
 import { scleraImages } from "../assets/scleraImages.js";
 import { blissImages } from "../assets/blissImages.js";
 import { notoEmojiImages } from "../assets/notoEmojiImages.js";
-
-// Components
 import SymbolItem from "../components/SymbolItem";
 import TextSymbolModal from "../components/TextSymbolModal";
 import CombinePreviewModal from "../components/CombinePreviewModal";
 
+// Fuse.js setup (remains the same)
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
   includeScore: true,
@@ -101,6 +98,8 @@ export default function PickerScreen() {
   const [activeInput, setActiveInput] = useState<
     "search" | "text" | "note" | null
   >(null);
+  // New state for the expanded toolbar
+  const [isToolbarExpanded, setIsToolbarExpanded] = useState(false);
 
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
@@ -119,7 +118,7 @@ export default function PickerScreen() {
     }
   }, [currentWord]);
 
-  // --- HANDLERS (Unchanged) ---
+  // --- HANDLERS (Most are unchanged) ---
   const promptForApiKey = () => {
     Alert.prompt(
       "Enter API Key",
@@ -462,15 +461,12 @@ export default function PickerScreen() {
       toggleMultiSelect();
     }
   };
-
-  useEffect(() => {
-    const newWordQuery = deckData[currentIndex]?.english;
-    if (newWordQuery) {
-      setSearchTerm("");
-      performSearch(newWordQuery);
-    }
-  }, [currentIndex, deckData]);
-
+  const handleSaveNote = () => {
+    addNote(noteInput);
+    setActiveInput(null);
+    Keyboard.dismiss();
+    Alert.alert("Note Saved!");
+  };
   const handleSearch = () => {
     const query = searchTerm.trim() || currentWord?.english || "";
     performSearch(query);
@@ -499,27 +495,32 @@ export default function PickerScreen() {
     setIsCombineModalVisible(true);
   };
 
-  const handleSaveNote = () => {
-    addNote(noteInput);
-    setActiveInput(null); // Close the input panel
-    Keyboard.dismiss();
-    Alert.alert("Note Saved!");
+  useEffect(() => {
+    const newWordQuery = deckData[currentIndex]?.english;
+    if (newWordQuery) {
+      setSearchTerm("");
+      performSearch(newWordQuery);
+    }
+  }, [currentIndex, deckData]);
+
+  // New handler for the consolidated export button
+  const handleExportPress = () => {
+    Alert.alert("Export Data", "Choose what you would like to export:", [
+      { text: "Export Deck (.csv)", onPress: () => handleExport() },
+      { text: "Export API Log (.csv)", onPress: () => handleExportMetadata() },
+      { text: "Cancel", style: "cancel" },
+    ]);
   };
 
   const screenOptions = useMemo(
     () => ({
       title: deckName,
-      headerRight: () => (
-        <View style={{ flexDirection: "row" }}>
-          {" "}
-          <Button onPress={handleExport} title="Export Deck" />{" "}
-          <View style={{ width: 10 }} />{" "}
-          <Button onPress={handleExportMetadata} title="Export Log" />{" "}
-        </View>
-      ),
+      // Remove headerRight to move buttons into the main UI
+      headerRight: () => null,
     }),
-    [deckName, deckData]
+    [deckName]
   );
+
   if (!isLoaded || deckData.length === 0) {
     return (
       <View style={styles.container}>
@@ -546,93 +547,122 @@ export default function PickerScreen() {
         <Text style={styles.wordText} numberOfLines={1} adjustsFontSizeToFit>
           {currentWord?.english || "N/A"}
         </Text>
-        {/* --- ADDED: Displays the saved note --- */}
         {currentWord?.notes ? (
           <Text style={styles.noteTextDisplay}>Note: {currentWord.notes}</Text>
         ) : null}
       </View>
 
+      {/* --- REFACTORED TWO-TIER TOOLBAR --- */}
       <View style={styles.toolbarContainer}>
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={() => toggleInputVisibility("search")}
-        >
-          <Ionicons
-            name="search"
-            size={24}
-            color={activeInput === "search" ? "#007AFF" : "white"}
-          />
-          <Text
-            style={
-              activeInput === "search"
-                ? styles.toolbarLabelActive
-                : styles.toolbarLabel
-            }
+        {/* Primary Toolbar */}
+        <View style={styles.primaryToolbar}>
+          <TouchableOpacity
+            style={styles.toolbarButton}
+            onPress={() => toggleInputVisibility("search")}
           >
-            Search
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={() => toggleInputVisibility("text")}
-        >
-          <Ionicons
-            name="text"
-            size={24}
-            color={activeInput === "text" ? "#007AFF" : "white"}
-          />
-          <Text
-            style={
-              activeInput === "text"
-                ? styles.toolbarLabelActive
-                : styles.toolbarLabel
-            }
+            <Ionicons
+              name="search"
+              size={24}
+              color={activeInput === "search" ? "#007AFF" : "white"}
+            />
+            <Text
+              style={
+                activeInput === "search"
+                  ? styles.toolbarLabelActive
+                  : styles.toolbarLabel
+              }
+            >
+              Search
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.toolbarButton}
+            onPress={() => toggleInputVisibility("text")}
           >
-            Text
-          </Text>
-        </TouchableOpacity>
-        {/* --- ADDED: Note button in toolbar --- */}
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={() => toggleInputVisibility("note")}
-        >
-          <Ionicons
-            name="document-text-outline"
-            size={24}
-            color={activeInput === "note" ? "#007AFF" : "white"}
-          />
-          <Text
-            style={
-              activeInput === "note"
-                ? styles.toolbarLabelActive
-                : styles.toolbarLabel
-            }
+            <Ionicons
+              name="text"
+              size={24}
+              color={activeInput === "text" ? "#007AFF" : "white"}
+            />
+            <Text
+              style={
+                activeInput === "text"
+                  ? styles.toolbarLabelActive
+                  : styles.toolbarLabel
+              }
+            >
+              Text
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.toolbarButton}
+            onPress={() => toggleInputVisibility("note")}
           >
-            Note
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.toolbarButton} onPress={handleSearch}>
-          <Ionicons name="refresh" size={24} color="white" />
-          <Text style={styles.toolbarLabel}>Refresh</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={handleFlaticonSearch}
-          disabled={isFlaticonLoading}
-        >
-          <Ionicons name="cloud-download-outline" size={24} color="white" />
-          <Text style={styles.toolbarLabel}>Flaticon</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.toolbarButton,
-            isMultiSelect && styles.multiSelectActiveButton,
-          ]}
-          onPress={toggleMultiSelect}
-        >
-          <Ionicons name="copy" size={24} color="white" />
-          <Text style={styles.toolbarLabel}>Select</Text>
-        </TouchableOpacity>
+            <Ionicons
+              name="document-text-outline"
+              size={24}
+              color={activeInput === "note" ? "#007AFF" : "white"}
+            />
+            <Text
+              style={
+                activeInput === "note"
+                  ? styles.toolbarLabelActive
+                  : styles.toolbarLabel
+              }
+            >
+              Note
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.toolbarButton,
+              isMultiSelect && styles.multiSelectActiveButton,
+            ]}
+            onPress={toggleMultiSelect}
+          >
+            <Ionicons name="copy" size={24} color="white" />
+            <Text style={styles.toolbarLabel}>Select</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.toolbarButton}
+            onPress={() => setIsToolbarExpanded((v) => !v)}
+          >
+            <Ionicons
+              name={isToolbarExpanded ? "chevron-up" : "chevron-down"}
+              size={24}
+              color="white"
+            />
+            <Text style={styles.toolbarLabel}>More</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Secondary (Collapsible) Toolbar */}
+        {isToolbarExpanded && (
+          <View style={styles.secondaryToolbar}>
+            <TouchableOpacity
+              style={styles.toolbarButton}
+              onPress={handleSearch}
+            >
+              <Ionicons name="refresh" size={24} color="white" />
+              <Text style={styles.toolbarLabel}>Refresh</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.toolbarButton}
+              onPress={handleFlaticonSearch}
+              disabled={isFlaticonLoading}
+            >
+              <Ionicons name="cloud-download-outline" size={24} color="white" />
+              <Text style={styles.toolbarLabel}>Flaticon</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.toolbarButton}
+              onPress={handleExportPress}
+            >
+              <Ionicons name="share-outline" size={24} color="white" />
+              <Text style={styles.toolbarLabel}>Export</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {activeInput === "search" && (
@@ -670,7 +700,6 @@ export default function PickerScreen() {
           </TouchableOpacity>
         </View>
       )}
-      {/* --- ADDED: Collapsible input for notes --- */}
       {activeInput === "note" && (
         <View style={styles.inputContainer}>
           <TextInput
@@ -774,8 +803,6 @@ export default function PickerScreen() {
         </View>
       )}
 
-      {/* --- REMOVED: Old persistent notes section --- */}
-
       <View style={styles.navContainer}>
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
@@ -827,26 +854,36 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center",
   },
-  // NEW style for displaying the saved note
   noteTextDisplay: {
-    color: "#FF9500", // Orange color to stand out
+    color: "#FF9500",
     fontSize: 14,
     fontStyle: "italic",
     textAlign: "center",
     marginTop: 4,
   },
+  // --- UPDATED & NEW TOOLBAR STYLES ---
   toolbarContainer: {
-    flexDirection: "row",
-    justifyContent: "space-evenly",
     backgroundColor: "#2C2C2E",
     borderRadius: 8,
-    paddingVertical: 4,
     marginBottom: 10,
+  },
+  primaryToolbar: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "flex-start",
+    paddingVertical: 4,
+  },
+  secondaryToolbar: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingVertical: 4,
+    borderTopWidth: 1,
+    borderTopColor: "#444",
   },
   toolbarButton: {
     flex: 1,
     alignItems: "center",
-    padding: 1,
+    padding: 4,
   },
   toolbarLabel: {
     color: "white",
@@ -894,7 +931,7 @@ const styles = StyleSheet.create({
   },
   navContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "space-evenly",
     width: "100%",
     paddingTop: 10,
     borderTopColor: "#333",
