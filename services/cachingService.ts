@@ -1,5 +1,3 @@
-// services/cachingService.ts
-
 import { Directory, File } from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import Papa from 'papaparse';
@@ -104,14 +102,8 @@ export const cacheApiResults = async (results, sourceName, searchQuery, repoDir,
     }
 };
 
-const saveDataWithSAF = async (
-  repoDir: Directory,
-  subdirectory: string,
-  base64Data: string,
-  symbolName: string
-): Promise<{ fileUri: string; filename: string } | null> => {
+const saveDataWithSAF = async ( repoDir: Directory, subdirectory: string, base64Data: string, symbolName: string ): Promise<{ fileUri: string; filename: string } | null> => {
   try {
-    // **THE FIX**: First, ensure the subdirectory exists and get a reference to it.
     const repoContents = await repoDir.list();
     let destinationDir = repoContents.find(
       (item) => item.name === subdirectory && item instanceof Directory
@@ -124,17 +116,14 @@ const saveDataWithSAF = async (
     const safeName = symbolName.replace(/[^a-zA-Z0-9\s/]/g, '_').replace(/\s\/\s/g, '-');
     const finalFilename = `${safeName}_${Date.now()}.png`;
     
-    // Create the file inside the correct subdirectory
     const fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(
-      destinationDir.uri, // Use the subdirectory's URI
-      finalFilename,      // Use just the filename
+      destinationDir.uri,
+      finalFilename,
       'image/png'
     );
 
     await FileSystemLegacy.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' });
 
-    console.log(`Saved new symbol to: ${fileUri}`);
-    // Return a filename that includes the subdirectory for the CSV log
     return { fileUri, filename: `${subdirectory}/${finalFilename}` };
 
   } catch (e) {
@@ -143,6 +132,45 @@ const saveDataWithSAF = async (
     return null;
   }
 };
+
+// --- NEW HELPER FUNCTION ---
+export const saveSingleApiSymbol = async (
+    repoDir: Directory,
+    item: { id: any; name: string; imageUrl: string },
+    sourceName: string
+  ): Promise<{ fileUri: string; filename: string } | null> => {
+    try {
+      const repoContents = await repoDir.list();
+      let sourceDir = repoContents.find(
+        (d) => d.name === sourceName && d instanceof Directory
+      ) as Directory;
+      if (!sourceDir) {
+        sourceDir = await repoDir.createDirectory(sourceName);
+      }
+  
+      const response = await fetch(item.imageUrl);
+      if (!response.ok) throw new Error("Failed to fetch image.");
+      const contentType = response.headers.get('content-type') || 'application/octet-stream';
+      let fileExtension = 'png';
+      if (contentType.includes('svg')) fileExtension = 'svg';
+      else if (contentType.includes('jpeg')) fileExtension = 'jpg';
+      
+      const safeName = (item.name || 'untitled').replace(/[^a-zA-Z0-9]/g, '_');
+      const finalFilename = `${safeName}_${item.id}.${fileExtension}`;
+  
+      const destinationFile = await sourceDir.createFile(finalFilename, contentType);
+      const imageBytes = await response.arrayBuffer();
+      await destinationFile.write(new Uint8Array(imageBytes));
+  
+      console.log(`Saved new single API symbol to: ${destinationFile.uri}`);
+      return { fileUri: destinationFile.uri, filename: `${sourceName}/${finalFilename}` };
+  
+    } catch (e) {
+      console.error(`Failed to save single API symbol: ${item.name}`, e);
+      Alert.alert("Save Error", `Could not save the symbol for ${item.name}.`);
+      return null;
+    }
+  };
 
 
 export const saveTextSymbol = (repoDir: Directory, base64Data: string, symbolName: string) => 

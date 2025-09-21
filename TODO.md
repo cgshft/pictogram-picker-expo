@@ -6,3 +6,4 @@
 1. Update style/format of combined selection bottom bar
 1. Fix the export api log functionality
 1. Chang AACIL to AACIL in frontend (may need to just change it on the API side in current code setup)
+1. Update top toolbar dropdown to left align the icons

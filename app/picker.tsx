@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Asset } from "expo-asset";
 import { File, Paths } from "expo-file-system";
+import * as FileSystemLegacy from "expo-file-system/legacy";
 import { Stack } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import * as Sharing from "expo-sharing";
@@ -27,6 +28,7 @@ import {
   cacheApiResults,
   getRepositoryDirectory,
   saveCombinedSymbol,
+  saveSingleApiSymbol,
   saveTextSymbol,
   setupRepositoryAndGetFile,
 } from "../services/cachingService";
@@ -46,12 +48,10 @@ import { picomData } from "../assets/picomSymbols.js";
 import { scleraImages } from "../assets/scleraImages.js";
 import { scleraData } from "../assets/scleraSymbols.js";
 import CombinePreviewModal from "../components/CombinePreviewModal";
+import SkeletonSymbolItem from "../components/SkeletonSymbolItem";
 import SymbolItem from "../components/SymbolItem";
 import TextSymbolModal from "../components/TextSymbolModal";
-// Import the new skeleton component
-import SkeletonSymbolItem from "../components/SkeletonSymbolItem";
 
-// Fuse.js setup remains the same
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
   includeScore: true,
@@ -112,6 +112,10 @@ export default function PickerScreen() {
     "search" | "text" | "note" | null
   >(null);
   const [isToolbarExpanded, setIsToolbarExpanded] = useState(false);
+  const [viewMode, setViewMode] = useState<"search" | "display">("search");
+  const [selectedSymbolUri, setSelectedSymbolUri] = useState<string | null>(
+    null
+  );
 
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
@@ -125,29 +129,90 @@ export default function PickerScreen() {
   const currentWord = deckData[currentIndex];
 
   useEffect(() => {
-    if (currentWord) {
-      setNoteInput(currentWord.notes || "");
+    const newSearchTerm = currentWord?.english || "";
+    if (currentWord?.symbol_filename) {
+      setViewMode("display");
+    } else {
+      setViewMode("search");
+      if (newSearchTerm) {
+        performSearch(newSearchTerm);
+      }
     }
+    setNoteInput(currentWord?.notes || "");
   }, [currentWord]);
 
-  // --- HANDLERS (Unchanged logic) ---
-  const promptForApiKey = () => {
-    Alert.prompt(
-      "Enter API Key",
-      "Please paste your Flaticon API key. It will be stored securely on your device.",
-      async (keyFromPrompt) => {
-        if (keyFromPrompt) {
-          await SecureStore.setItemAsync("flaticonApiKey", keyFromPrompt);
-          setFlaticonApiKey(keyFromPrompt);
-          Alert.alert("Success", "API Key saved securely.");
+  useEffect(() => {
+    if (viewMode === "display" && currentWord?.symbol_filename) {
+      const loadSymbolImage = async () => {
+        setSelectedSymbolUri(null);
+        try {
+          const fileIdentifier = currentWord.symbol_filename;
+          if (!fileIdentifier)
+            throw new Error("Filename is missing from deck data.");
+
+          let fileUriToRead: string;
+          if (
+            fileIdentifier.startsWith("content://") ||
+            fileIdentifier.startsWith("file://")
+          ) {
+            fileUriToRead = fileIdentifier;
+          } else {
+            const source = currentWord.symbol_source;
+            const imageMap = {
+              Mulberry: mulberryImages,
+              OpenMoji: openmojiImages,
+              Picom: picomImages,
+              Sclera: scleraImages,
+              Bliss: blissImages,
+              "Noto Emoji": notoEmojiImages,
+            };
+            const key =
+              source === "OpenMoji"
+                ? fileIdentifier.split(".")[0]
+                : fileIdentifier;
+            const imageResource = imageMap[source]?.[key];
+
+            if (imageResource) {
+              const asset = Asset.fromModule(imageResource);
+              await asset.downloadAsync();
+              if (!asset.localUri)
+                throw new Error(
+                  `Asset for ${fileIdentifier} has no local URI.`
+                );
+              fileUriToRead = asset.localUri;
+            } else {
+              throw new Error(
+                `Could not find local asset for "${fileIdentifier}" in source "${source}".`
+              );
+            }
+          }
+
+          const base64Content = await FileSystemLegacy.readAsStringAsync(
+            fileUriToRead,
+            {
+              encoding: "base64",
+            }
+          );
+          setSelectedSymbolUri(`data:image/png;base64,${base64Content}`);
+        } catch (e) {
+          console.error("Failed to load selected symbol image:", e);
+          Alert.alert(
+            "Error",
+            `Could not load the selected symbol image: ${e.message}`
+          );
+          setSelectedSymbolUri(null);
         }
-      }
-    );
-  };
+      };
+      loadSymbolImage();
+    }
+  }, [viewMode, currentWord]);
+
+  // --- UPDATED to handle single-select for API sources ---
   const handleSymbolPress = async (item, sourceName) => {
     const uniqueId = `${sourceName}-${
       item.filename || item.hexcode || item.id || item["symbol-en"]
     }`;
+
     if (isMultiSelect) {
       if (selection.find((s) => s.uniqueId === uniqueId)) {
         setSelection((prev) => prev.filter((s) => s.uniqueId !== uniqueId));
@@ -202,10 +267,69 @@ export default function PickerScreen() {
       }
       setSelection((currentSelection) => [...currentSelection, selectionItem]);
     } else {
-      let symbolName =
-        sourceName === "Mulberry" ? item["symbol-en"] : item.name;
-      selectSymbol(symbolName, sourceName, item.filename);
+      // Single-select mode
+      const symbolName = item.name || item["symbol-en"];
+      if (item.imageUrl) {
+        // It's a remote API symbol, so download and save it.
+        const repoDir = await getRepositoryDirectory();
+        if (!repoDir) {
+          Alert.alert("Error", "Repository directory not set.");
+          return;
+        }
+        const savedFile = await saveSingleApiSymbol(repoDir, item, sourceName);
+        if (savedFile) {
+          selectSymbol(symbolName, sourceName, savedFile.fileUri);
+        }
+      } else {
+        // It's a local, bundled asset. Just save its identifier.
+        const identifier = item.filename || item.hexcode;
+        selectSymbol(symbolName, sourceName, identifier);
+      }
     }
+  };
+
+  const handleSaveTextSymbol = async ({ base64Data, symbolName }) => {
+    setIsTextModalVisible(false);
+    const repoDir = await getRepositoryDirectory();
+    if (!repoDir) {
+      Alert.alert("Error", "Repository directory not set.");
+      return;
+    }
+    const savedFile = await saveTextSymbol(repoDir, base64Data, symbolName);
+    if (savedFile) {
+      selectSymbol(symbolName, "Custom Text", savedFile.fileUri);
+      nextWord();
+    }
+  };
+  const handleSaveCombination = async ({ base64Data, combinedName }) => {
+    setIsCombineModalVisible(false);
+    const repoDir = await getRepositoryDirectory();
+    if (!repoDir) return;
+    const savedFile = await saveCombinedSymbol(
+      repoDir,
+      base64Data,
+      combinedName
+    );
+    if (savedFile) {
+      selectSymbol(combinedName, "Combined", savedFile.fileUri);
+      toggleMultiSelect();
+      nextWord();
+    }
+  };
+
+  // Other handlers...
+  const promptForApiKey = () => {
+    Alert.prompt(
+      "Enter API Key",
+      "Please paste your Flaticon API key. It will be stored securely on your device.",
+      async (keyFromPrompt) => {
+        if (keyFromPrompt) {
+          await SecureStore.setItemAsync("flaticonApiKey", keyFromPrompt);
+          setFlaticonApiKey(keyFromPrompt);
+          Alert.alert("Success", "API Key saved securely.");
+        }
+      }
+    );
   };
   const handleFlaticonSearch = async () => {
     let key = flaticonApiKey;
@@ -444,33 +568,6 @@ export default function PickerScreen() {
       setIsApiLoading(false);
     }
   };
-  const handleSaveTextSymbol = async ({ base64Data, symbolName }) => {
-    setIsTextModalVisible(false);
-    const repoDir = await getRepositoryDirectory();
-    if (!repoDir) {
-      Alert.alert("Error", "Repository directory not set.");
-      return;
-    }
-    const savedFile = await saveTextSymbol(repoDir, base64Data, symbolName);
-    if (savedFile) {
-      selectSymbol(symbolName, "Custom Text", savedFile.filename);
-      setTextSymbolInput("");
-    }
-  };
-  const handleSaveCombination = async ({ base64Data, combinedName }) => {
-    setIsCombineModalVisible(false);
-    const repoDir = await getRepositoryDirectory();
-    if (!repoDir) return;
-    const savedFile = await saveCombinedSymbol(
-      repoDir,
-      base64Data,
-      combinedName
-    );
-    if (savedFile) {
-      selectSymbol(combinedName, "Combined", savedFile.filename);
-      toggleMultiSelect();
-    }
-  };
   const handleSaveNote = () => {
     addNote(noteInput);
     setActiveInput(null);
@@ -511,14 +608,10 @@ export default function PickerScreen() {
       { text: "Cancel", style: "cancel" },
     ]);
   };
-
-  useEffect(() => {
-    const newWordQuery = deckData[currentIndex]?.english;
-    if (newWordQuery) {
-      setSearchTerm("");
-      performSearch(newWordQuery);
-    }
-  }, [currentIndex, deckData]);
+  const handleUpdatePress = () => {
+    setViewMode("search");
+    performSearch(currentWord?.english || "");
+  };
 
   const screenOptions = useMemo(
     () => ({ title: deckName, headerRight: () => null }),
@@ -534,6 +627,7 @@ export default function PickerScreen() {
   const isAtStart = currentIndex === 0;
   const isAtEnd = currentIndex === deckData.length - 1;
 
+  // The rest of the JSX remains the same
   return (
     <View style={styles.container}>
       <Stack.Screen options={screenOptions} />
@@ -713,101 +807,112 @@ export default function PickerScreen() {
         </View>
       )}
 
-      <ScrollView
-        style={styles.resultsScrollView}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* --- UPDATED: Rendering logic with skeletons --- */}
-        {SOURCE_ORDER.map((sourceName) => {
-          const results = searchResults[sourceName];
-          const isApiSource =
-            sourceName === "ARASAAC" || sourceName === "AACIL";
-
-          // If we have results, render them.
-          if (results && results.length > 0) {
-            return (
-              <View key={sourceName} style={styles.sourceContainer}>
-                <View style={styles.sourceHeaderContainer}>
-                  <Text style={styles.sourceHeaderText}>{sourceName}</Text>
+      {viewMode === "search" && (
+        <ScrollView
+          style={styles.resultsScrollView}
+          keyboardShouldPersistTaps="handled"
+        >
+          {SOURCE_ORDER.map((sourceName) => {
+            const results = searchResults[sourceName];
+            const isApiSource =
+              sourceName === "ARASAAC" || sourceName === "AACIL";
+            if (results && results.length > 0) {
+              return (
+                <View key={sourceName} style={styles.sourceContainer}>
+                  <View style={styles.sourceHeaderContainer}>
+                    <Text style={styles.sourceHeaderText}>{sourceName}</Text>
+                  </View>
+                  <FlatList
+                    style={{ flex: 1 }}
+                    data={results}
+                    renderItem={({ item }) => (
+                      <SymbolItem
+                        item={item.item}
+                        source={sourceName as any}
+                        onPress={() => handleSymbolPress(item.item, sourceName)}
+                      />
+                    )}
+                    keyExtractor={(item, index) =>
+                      `${sourceName}-${item.refIndex}-${index}`
+                    }
+                    horizontal={true}
+                    showsHorizontalScrollIndicator={false}
+                  />
                 </View>
-                <FlatList
-                  style={{ flex: 1 }}
-                  data={results}
-                  renderItem={({ item }) => (
-                    <SymbolItem
-                      item={item.item}
-                      source={sourceName as any}
-                      onPress={() => handleSymbolPress(item.item, sourceName)}
-                    />
-                  )}
-                  keyExtractor={(item, index) =>
-                    `${sourceName}-${item.refIndex}-${index}`
-                  }
-                  horizontal={true}
-                  showsHorizontalScrollIndicator={false}
-                />
+              );
+            } else if (isApiLoading && isApiSource) {
+              return (
+                <View
+                  key={`${sourceName}-loading`}
+                  style={styles.sourceContainer}
+                >
+                  <View style={styles.sourceHeaderContainer}>
+                    <Text style={styles.sourceHeaderText}>{sourceName}</Text>
+                  </View>
+                  <View style={{ flexDirection: "row" }}>
+                    <SkeletonSymbolItem />
+                    <SkeletonSymbolItem />
+                    <SkeletonSymbolItem />
+                    <SkeletonSymbolItem />
+                  </View>
+                </View>
+              );
+            }
+            return null;
+          })}
+          {isFlaticonLoading && (
+            <View style={styles.sourceContainer}>
+              <View style={styles.sourceHeaderContainer}>
+                <Text style={styles.sourceHeaderText}>Flaticon</Text>
               </View>
-            );
-          }
-          // If API is loading and this is an API source, render skeletons.
-          else if (isApiLoading && isApiSource) {
-            return (
-              <View
-                key={`${sourceName}-loading`}
-                style={styles.sourceContainer}
-              >
-                <View style={styles.sourceHeaderContainer}>
-                  <Text style={styles.sourceHeaderText}>{sourceName}</Text>
-                </View>
-                <View style={{ flexDirection: "row" }}>
-                  <SkeletonSymbolItem />
-                  <SkeletonSymbolItem />
-                  <SkeletonSymbolItem />
-                  <SkeletonSymbolItem />
-                </View>
+              <View style={{ flexDirection: "row" }}>
+                <SkeletonSymbolItem />
+                <SkeletonSymbolItem />
+                <SkeletonSymbolItem />
+                <SkeletonSymbolItem />
               </View>
-            );
-          }
-          // Otherwise, render nothing for this source.
-          return null;
-        })}
-
-        {isFlaticonLoading && (
-          <View style={styles.sourceContainer}>
-            <View style={styles.sourceHeaderContainer}>
-              <Text style={styles.sourceHeaderText}>Flaticon</Text>
             </View>
-            <View style={{ flexDirection: "row" }}>
-              <SkeletonSymbolItem />
-              <SkeletonSymbolItem />
-              <SkeletonSymbolItem />
-              <SkeletonSymbolItem />
+          )}
+          {!isFlaticonLoading && flaticonResults.length > 0 && (
+            <View style={styles.sourceContainer}>
+              <View style={styles.sourceHeaderContainer}>
+                <Text style={styles.sourceHeaderText}>Flaticon</Text>
+              </View>
+              <FlatList
+                style={{ flex: 1 }}
+                data={flaticonResults}
+                renderItem={({ item }) => (
+                  <SymbolItem
+                    item={item.item}
+                    source={"Flaticon" as any}
+                    onPress={() => handleSymbolPress(item.item, "Flaticon")}
+                  />
+                )}
+                keyExtractor={(item) => `Flaticon-${item.refIndex}`}
+                horizontal={true}
+                showsHorizontalScrollIndicator={false}
+              />
             </View>
-          </View>
-        )}
-        {!isFlaticonLoading && flaticonResults.length > 0 && (
-          <View style={styles.sourceContainer}>
-            <View style={styles.sourceHeaderContainer}>
-              <Text style={styles.sourceHeaderText}>Flaticon</Text>
-            </View>
-            <FlatList
-              style={{ flex: 1 }}
-              data={flaticonResults}
-              renderItem={({ item }) => (
-                <SymbolItem
-                  item={item.item}
-                  source={"Flaticon" as any}
-                  onPress={() => handleSymbolPress(item.item, "Flaticon")}
-                />
-              )}
-              keyExtractor={(item) => `Flaticon-${item.refIndex}`}
-              horizontal={true}
-              showsHorizontalScrollIndicator={false}
+          )}
+        </ScrollView>
+      )}
+      {viewMode === "display" && (
+        <View style={styles.displayContainer}>
+          {selectedSymbolUri ? (
+            <Image
+              source={{ uri: selectedSymbolUri }}
+              style={styles.displayImage}
+              resizeMode="contain"
             />
-          </View>
-        )}
-      </ScrollView>
-
+          ) : (
+            <ActivityIndicator size="large" color="#FFFFFF" />
+          )}
+          <Text style={styles.displayInfoText}>
+            Source: {currentWord?.symbol_source}
+          </Text>
+          <Button title="Update Symbol" onPress={handleUpdatePress} />
+        </View>
+      )}
       {isMultiSelect && (
         <View style={styles.trayContainer}>
           <Text style={styles.trayTitle}>
@@ -950,7 +1055,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   sourceHeaderContainer: {
-    width: 15,
+    width: 25,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 5,
@@ -1003,4 +1108,20 @@ const styles = StyleSheet.create({
   },
   switchRow: { flexDirection: "row", alignItems: "center" },
   label: { color: "#ccc", marginRight: 10 },
+  displayContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  displayImage: {
+    width: 256,
+    height: 256,
+    marginBottom: 20,
+  },
+  displayInfoText: {
+    color: "#ccc",
+    fontSize: 16,
+    fontStyle: "italic",
+    marginBottom: 20,
+  },
 });
