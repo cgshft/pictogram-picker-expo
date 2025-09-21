@@ -1,4 +1,2 @@
 # TODOs
-1. Add code to use mulberry PNGs instead of SVG
-1. Add code to get multiselect working with non-api sources
-2. 
+1. Update csv export format to be more verbose and have more descriptive filenames (include source)
