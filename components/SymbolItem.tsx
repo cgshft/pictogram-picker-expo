@@ -1,12 +1,12 @@
 // components/SymbolItem.tsx
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { blissImages } from "../assets/blissImages.js";
 import { mulberryImages } from "../assets/mulberryImages.js";
+import { notoEmojiImages } from "../assets/notoEmojiImages.js";
 import { openmojiImages } from "../assets/openmojiImages.js";
 import { picomImages } from "../assets/picomImages.js";
 import { scleraImages } from "../assets/scleraImages.js";
-import { blissImages } from "../assets/blissImages.js";
-import { notoEmojiImages } from "../assets/notoEmojiImages.js";
 
 interface SymbolItemProps {
   item: any;
@@ -18,7 +18,7 @@ interface SymbolItemProps {
     | "Bliss"
     | "Noto Emoji"
     | "ARASAAC"
-    | "AAC Image Library"
+    | "AACIL"
     | "Flaticon";
   onPress: () => void;
 }
@@ -76,7 +76,7 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
     );
   } else if (
     source === "ARASAAC" ||
-    source === "AAC Image Library" ||
+    source === "AACIL" ||
     source === "Flaticon"
   ) {
     name = item.name;
@@ -116,8 +116,8 @@ const styles = StyleSheet.create({
     // borderColor: "#444",
   },
   imageContainer: {
-    width: '90%',
-    height: '80%',
+    width: "90%",
+    height: "80%",
     alignItems: "center",
     justifyContent: "center",
   },

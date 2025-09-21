@@ -5,4 +5,4 @@
 1. Remove the combined symbol selection logging once no duplication has been confirmed
 1. Update style/format of combined selection bottom bar
 1. Fix the export api log functionality
-1. Chang AAC Image Library to AACIL in frontend (may need to just change it on the API side in current code setup)
+1. Chang AACIL to AACIL in frontend (may need to just change it on the API side in current code setup)

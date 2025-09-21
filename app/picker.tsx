@@ -1,53 +1,53 @@
-import React, { useMemo, useState, useEffect } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { Asset } from "expo-asset";
+import { File, Paths } from "expo-file-system";
+import { Stack } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import * as Sharing from "expo-sharing";
+import Fuse from "fuse.js";
+import Papa from "papaparse";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
   ActivityIndicator,
-  TouchableOpacity,
-  TextInput,
-  FlatList,
-  ScrollView,
-  Button,
-  Platform,
   Alert,
-  Switch,
+  Button,
+  FlatList,
   Image,
   Keyboard,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { useDeckStore } from "../state/store";
-import { Stack } from "expo-router";
-import Fuse from "fuse.js";
-import * as Sharing from "expo-sharing";
-import { File, Paths } from "expo-file-system";
-import Papa from "papaparse";
-import { Asset } from "expo-asset";
 import {
   cacheApiResults,
   getRepositoryDirectory,
-  setupRepositoryAndGetFile,
-  saveTextSymbol,
   saveCombinedSymbol,
+  saveTextSymbol,
+  setupRepositoryAndGetFile,
 } from "../services/cachingService";
-import * as SecureStore from "expo-secure-store";
-import { Ionicons } from "@expo/vector-icons";
+import { useDeckStore } from "../state/store";
 
 // Local Symbol Data & Components
-import { mulberryData } from "../assets/mulberrySymbols.js";
-import { openmojiData } from "../assets/openmojiSymbols.js";
-import { picomData } from "../assets/picomSymbols.js";
-import { scleraData } from "../assets/scleraSymbols.js";
-import { blissData } from "../assets/blissSymbols.js";
-import { notoEmojiData } from "../assets/notoEmojiSymbols.js";
-import { mulberryImages } from "../assets/mulberryImages.js";
-import { openmojiImages } from "../assets/openmojiImages.js";
-import { picomImages } from "../assets/picomImages.js";
-import { scleraImages } from "../assets/scleraImages.js";
 import { blissImages } from "../assets/blissImages.js";
+import { blissData } from "../assets/blissSymbols.js";
+import { mulberryImages } from "../assets/mulberryImages.js";
+import { mulberryData } from "../assets/mulberrySymbols.js";
 import { notoEmojiImages } from "../assets/notoEmojiImages.js";
+import { notoEmojiData } from "../assets/notoEmojiSymbols.js";
+import { openmojiImages } from "../assets/openmojiImages.js";
+import { openmojiData } from "../assets/openmojiSymbols.js";
+import { picomImages } from "../assets/picomImages.js";
+import { picomData } from "../assets/picomSymbols.js";
+import { scleraImages } from "../assets/scleraImages.js";
+import { scleraData } from "../assets/scleraSymbols.js";
+import CombinePreviewModal from "../components/CombinePreviewModal";
 import SymbolItem from "../components/SymbolItem";
 import TextSymbolModal from "../components/TextSymbolModal";
-import CombinePreviewModal from "../components/CombinePreviewModal";
 // Import the new skeleton component
 import SkeletonSymbolItem from "../components/SkeletonSymbolItem";
 
@@ -85,7 +85,7 @@ const fuseNotoEmoji = new Fuse(notoEmojiData, {
 
 const SOURCE_ORDER = [
   "ARASAAC",
-  "AAC Image Library",
+  "AACIL",
   "Mulberry",
   "Picom",
   "OpenMoji",
@@ -388,17 +388,15 @@ export default function PickerScreen() {
       const newApiResults = {};
       if (arasaacResponse.ok) {
         const arasaacJson = await arasaacResponse.json();
-        const arasaacResults = arasaacJson
-          .slice(0, 4)
-          .map((result) => ({
-            item: {
-              id: result._id,
-              name: result.keywords?.[0]?.keyword || "untitled",
-              imageUrl: `https://api.arasaac.org/api/pictograms/${result._id}`,
-            },
-            score: 0,
-            refIndex: result._id,
-          }));
+        const arasaacResults = arasaacJson.slice(0, 4).map((result) => ({
+          item: {
+            id: result._id,
+            name: result.keywords?.[0]?.keyword || "untitled",
+            imageUrl: `https://api.arasaac.org/api/pictograms/${result._id}`,
+          },
+          score: 0,
+          refIndex: result._id,
+        }));
         if (arasaacResults.length > 0) {
           newApiResults.ARASAAC = arasaacResults;
           cacheApiResults(
@@ -424,10 +422,10 @@ export default function PickerScreen() {
           }))
           .slice(0, 4);
         if (processedResults.length > 0) {
-          newApiResults["AAC Image Library"] = processedResults;
+          newApiResults["AACIL"] = processedResults;
           cacheApiResults(
             processedResults,
-            "AAC Image Library",
+            "AACIL",
             query,
             repoDir,
             metadataFile
@@ -723,7 +721,7 @@ export default function PickerScreen() {
         {SOURCE_ORDER.map((sourceName) => {
           const results = searchResults[sourceName];
           const isApiSource =
-            sourceName === "ARASAAC" || sourceName === "AAC Image Library";
+            sourceName === "ARASAAC" || sourceName === "AACIL";
 
           // If we have results, render them.
           if (results && results.length > 0) {
