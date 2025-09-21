@@ -1,6 +1,4 @@
-// components/CombinePreviewModal.tsx
-
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,14 +7,15 @@ import {
   Button,
   ActivityIndicator,
   Alert,
+  Image,
 } from "react-native";
-import { Svg, Image as SvgImage, Text as SvgText } from "react-native-svg";
-import ViewShot from "react-native-view-shot";
-import * as FileSystem from "expo-file-system/legacy";
+import { WebView } from "react-native-webview";
+import { File, cacheDirectory, downloadAsync } from "expo-file-system";
+import { Asset } from "expo-asset";
 
 const IMG_SIZE = 512;
 const SEPARATOR_WIDTH = 250;
-const SEPARATOR_VERTICAL_OFFSET = 90;
+const SEPARATOR_TEXT = "||";
 
 interface CombinePreviewModalProps {
   visible: boolean;
@@ -26,23 +25,87 @@ interface CombinePreviewModalProps {
   onSave: (result: { base64Data: string; combinedName: string }) => void;
 }
 
-const processImageToTemp = async (uri: string, index: number) => {
-  if (!uri) return null;
-  const tempFileUri =
-    FileSystem.cacheDirectory + `combine_temp_${index}_${Date.now()}.png`;
-
-  try {
-    if (uri.startsWith("http")) {
-      const downloadResult = await FileSystem.downloadAsync(uri, tempFileUri);
-      return downloadResult.uri;
-    } else {
-      await FileSystem.copyAsync({ from: uri, to: tempFileUri });
-      return tempFileUri;
+// Helper to get a local file URI for an image asset
+const getLocalImageUri = async (item: any): Promise<string> => {
+  if (item.localUri) return item.localUri;
+  if (item.imageUrl) {
+    const tempFileUri = cacheDirectory + `combine_remote_${Date.now()}.png`;
+    try {
+      const { uri } = await downloadAsync(item.imageUrl, tempFileUri);
+      return uri;
+    } catch (e) {
+      console.error(`Failed to download ${item.imageUrl}`, e);
+      throw e;
     }
-  } catch (e) {
-    console.error(`Failed to process URI ${uri}:`, e);
-    return null;
   }
+  if (item.imageResource) {
+    const asset = Asset.fromModule(item.imageResource);
+    await asset.downloadAsync();
+    if (!asset.localUri) throw new Error("Asset has no local URI");
+    return asset.localUri;
+  }
+  throw new Error(`No image source found for item ${item.name || "unknown"}`);
+};
+
+// Generates the HTML+JS needed to combine images on a canvas
+const createCombineHtml = (
+  base64Images: string[],
+  isOrType: boolean
+): string => {
+  const numSeparators = isOrType ? Math.max(0, base64Images.length - 1) : 0;
+  const totalWidth =
+    base64Images.length * IMG_SIZE + numSeparators * SEPARATOR_WIDTH;
+  const imagesJson = JSON.stringify(base64Images);
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+      </head>
+      <body>
+        <canvas id="canvas" width="${totalWidth}" height="${IMG_SIZE}" style="display: none;"></canvas>
+        <script>
+          const canvas = document.getElementById('canvas');
+          const ctx = canvas.getContext('2d');
+          const base64Sources = ${imagesJson};
+          
+          const loadImage = (src) => new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = src;
+          });
+
+          Promise.all(base64Sources.map(src => loadImage('data:image/png;base64,' + src)))
+            .then(images => {
+              ctx.fillStyle = 'white';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              let xOffset = 0;
+              images.forEach((img, index) => {
+                ctx.drawImage(img, xOffset, 0, ${IMG_SIZE}, ${IMG_SIZE});
+                xOffset += ${IMG_SIZE};
+                if (${isOrType} && index < images.length - 1) {
+                  ctx.fillStyle = 'black';
+                  ctx.font = '250px sans-serif';
+                  ctx.textAlign = 'center';
+                  ctx.textBaseline = 'middle';
+                  ctx.fillText("${SEPARATOR_TEXT}", xOffset + ${
+    SEPARATOR_WIDTH / 2
+  }, ${IMG_SIZE / 2});
+                  xOffset += ${SEPARATOR_WIDTH};
+                }
+              });
+              const finalBase64 = canvas.toDataURL('image/png').split(',')[1];
+              window.ReactNativeWebView.postMessage(finalBase64);
+            })
+            .catch(error => {
+              window.ReactNativeWebView.postMessage('ERROR: ' + error.message);
+            });
+        </script>
+      </body>
+    </html>
+  `;
 };
 
 export default function CombinePreviewModal({
@@ -53,72 +116,55 @@ export default function CombinePreviewModal({
   onSave,
 }: CombinePreviewModalProps) {
   const [isLoading, setIsLoading] = useState(true);
-  const [imageSources, setImageSources] = useState<string[]>([]);
-  const [previewContainerWidth, setPreviewContainerWidth] = useState(0);
-  const viewShotRef = useRef<ViewShot>(null);
+  const [combinedBase64, setCombinedBase64] = useState<string | null>(null);
+  const [htmlToRender, setHtmlToRender] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible && selection.length > 0) {
-      const loadImages = async () => {
+      const processImages = async () => {
         setIsLoading(true);
+        setCombinedBase64(null);
+        setHtmlToRender(null);
         try {
-          const urisToProcess = selection.map(
-            (item) => item.imageUrl || item.localUri
-          );
-          const tempUris = await Promise.all(
-            urisToProcess.map((uri, index) => processImageToTemp(uri, index))
-          );
+          const uris = await Promise.all(selection.map(getLocalImageUri));
 
-          const validUris = tempUris.filter(Boolean);
-          if (validUris.length !== selection.length) {
-            throw new Error("One or more images failed to load.");
-          }
-
+          // **THE FIX**: Use the modern, non-deprecated File API
           const base64Sources = await Promise.all(
-            validUris.map((uri) =>
-              FileSystem.readAsStringAsync(uri, { encoding: "base64" })
-            )
+            uris.map(async (uri) => {
+              const file = new File(uri);
+              return await file.base64();
+            })
           );
-          setImageSources(base64Sources);
+
+          setHtmlToRender(createCombineHtml(base64Sources, isOrType));
         } catch (error) {
-          console.error("Error loading images for combination:", error);
-          Alert.alert(
-            "Error",
-            `Could not load one or more images. ${error.message}`
-          );
+          console.error("Error processing images for combination:", error);
+          Alert.alert("Error", "Could not load images for combining.");
           onClose();
-        } finally {
-          setIsLoading(false);
         }
       };
-      loadImages();
+      processImages();
     }
-  }, [visible, selection]);
+  }, [visible, selection, isOrType]);
 
-  const handleSave = async () => {
-    if (!viewShotRef.current?.capture) return;
-    try {
-      const base64Data = await viewShotRef.current.capture({
-        result: "base64",
-        format: "png",
-      });
-      const combinedName = selection.map((s) => s.name).join(" / ");
-      onSave({ base64Data, combinedName });
-    } catch (error) {
-      console.error("Failed to capture combined symbol:", error);
-      Alert.alert("Error", "Could not create the combined symbol image.");
+  const handleWebViewMessage = (event: any) => {
+    const message = event.nativeEvent.data;
+    if (message.startsWith("ERROR:")) {
+      console.error("Error from WebView:", message);
+      Alert.alert("Error", "Could not generate the combined image.");
+      setIsLoading(false);
+    } else {
+      setCombinedBase64(message);
+      setIsLoading(false);
     }
   };
 
-  const numSeparators = isOrType ? Math.max(0, selection.length - 1) : 0;
-  const totalWidth =
-    selection.length * IMG_SIZE + numSeparators * SEPARATOR_WIDTH;
-
-  // FIX: This scale value will be used in a transform to shrink the view
-  const scale =
-    previewContainerWidth > 0 && totalWidth > 0
-      ? Math.min(1, previewContainerWidth / totalWidth)
-      : 1;
+  const handleSave = () => {
+    if (combinedBase64) {
+      const combinedName = selection.map((s) => s.name).join(" / ");
+      onSave({ base64Data: combinedBase64, combinedName });
+    }
+  };
 
   return (
     <Modal
@@ -127,73 +173,39 @@ export default function CombinePreviewModal({
       visible={visible}
       onRequestClose={onClose}
     >
+      {htmlToRender && (
+        <View style={{ width: 0, height: 0 }}>
+          <WebView
+            originWhitelist={["*"]}
+            source={{ html: htmlToRender }}
+            onMessage={handleWebViewMessage}
+            onError={(e) => console.error("WebView Error:", e.nativeEvent)}
+          />
+        </View>
+      )}
       <View style={styles.centeredView}>
         <View style={styles.modalView}>
           <Text style={styles.modalTitle}>Combine Symbols</Text>
-          <View
-            style={styles.previewContainer}
-            onLayout={(event) =>
-              setPreviewContainerWidth(event.nativeEvent.layout.width)
-            }
-          >
+          <View style={styles.previewContainer}>
             {isLoading ? (
               <ActivityIndicator size="large" />
             ) : (
-              // FIX: Removed ScrollView and applied scale transform directly
-              <ViewShot
-                ref={viewShotRef}
-                options={{ format: "png", quality: 1.0 }}
-                style={{ transform: [{ scale }] }}
-              >
-                <View style={{ backgroundColor: "white" }}>
-                  <Svg
-                    height={IMG_SIZE}
-                    width={totalWidth}
-                    viewBox={`0 0 ${totalWidth} ${IMG_SIZE}`}
-                  >
-                    {imageSources.map((base64, index) => {
-                      const xOffset =
-                        index * (IMG_SIZE + (isOrType ? SEPARATOR_WIDTH : 0));
-                      return (
-                        <React.Fragment key={index}>
-                          <SvgImage
-                            x={xOffset}
-                            y="0"
-                            width={IMG_SIZE}
-                            height={IMG_SIZE}
-                            href={`data:image/png;base64,${base64}`}
-                          />
-                          {isOrType && index < imageSources.length - 1 && (
-                            <SvgText
-                              x={xOffset + IMG_SIZE + SEPARATOR_WIDTH / 2}
-                              y={IMG_SIZE / 2}
-                              dy={SEPARATOR_VERTICAL_OFFSET}
-                              dominantBaseline="middle"
-                              textAnchor="middle"
-                              fontSize={250}
-                              fill="black"
-                              fontFamily="sans-serif"
-                              fontWeight="bold"
-                            >
-                              ||
-                            </SvgText>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </Svg>
-                </View>
-              </ViewShot>
+              combinedBase64 && (
+                <Image
+                  source={{ uri: `data:image/png;base64,${combinedBase64}` }}
+                  style={styles.previewImage}
+                  resizeMode="contain"
+                />
+              )
             )}
           </View>
-
           <View style={styles.buttonContainer}>
             <Button title="Cancel" onPress={onClose} color="#888" />
             <View style={{ width: 20 }} />
             <Button
               title="Save Combination"
               onPress={handleSave}
-              disabled={isLoading}
+              disabled={isLoading || !combinedBase64}
             />
           </View>
         </View>
@@ -225,13 +237,16 @@ const styles = StyleSheet.create({
   },
   previewContainer: {
     width: "100%",
-    height: 150, // This acts as a max-height now
+    height: 150,
     backgroundColor: "#1C1C1E",
     borderRadius: 8,
     marginBottom: 20,
     justifyContent: "center",
     alignItems: "center",
-    overflow: "hidden", // Important for containing the scaled view
+  },
+  previewImage: {
+    width: "100%",
+    height: "100%",
   },
   buttonContainer: {
     flexDirection: "row",

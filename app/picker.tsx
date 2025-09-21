@@ -21,6 +21,7 @@ import Fuse from "fuse.js";
 import * as Sharing from "expo-sharing";
 import { File, Paths } from "expo-file-system";
 import Papa from "papaparse";
+import { Asset } from "expo-asset"; // Import the Asset module
 import {
   cacheApiResults,
   getRepositoryDirectory,
@@ -50,6 +51,7 @@ import SymbolItem from "../components/SymbolItem";
 import TextSymbolModal from "../components/TextSymbolModal";
 import CombinePreviewModal from "../components/CombinePreviewModal";
 
+// --- (Fuse.js setup remains the same) ---
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
   includeScore: true,
@@ -117,57 +119,65 @@ export default function PickerScreen() {
         return;
       }
 
+      const selectionItem = {
+        ...item,
+        uniqueId,
+        sourceName,
+        name: item["symbol-en"] || item.name || item.annotation || "untitled",
+        imageUrl: null,
+        localUri: null,
+      };
+
       if (item.imageUrl) {
-        setSelection([
-          ...selection,
-          {
-            ...item,
-            uniqueId,
-            sourceName,
-            imageUrl: item.imageUrl,
-            name: item.name,
-          },
-        ]);
-        return;
-      }
-
-      const imageMap = {
-        Mulberry: mulberryImages,
-        OpenMoji: openmojiImages,
-        Picom: picomImages,
-        Sclera: scleraImages,
-        Bliss: blissImages,
-        "Noto Emoji": notoEmojiImages,
-      };
-
-      const keyMap = {
-        Mulberry: item.filename,
-        OpenMoji: item.hexcode,
-        Picom: item.filename,
-        Sclera: item.filename,
-        Bliss: item.filename,
-        "Noto Emoji": item.filename,
-      };
-
-      const imageResource = imageMap[sourceName]?.[keyMap[sourceName]];
-
-      if (imageResource) {
-        const localUri = Image.resolveAssetSource(imageResource).uri;
-        const name = item["symbol-en"] || item.name || "Unknown";
-        setSelection([
-          ...selection,
-          { ...item, uniqueId, sourceName, localUri, name },
-        ]);
+        selectionItem.imageUrl = item.imageUrl;
       } else {
-        Alert.alert(
-          "Error",
-          `Could not find the image resource for selection.`
-        );
+        const imageMap = {
+          Mulberry: mulberryImages,
+          OpenMoji: openmojiImages,
+          Picom: picomImages,
+          Sclera: scleraImages,
+          Bliss: blissImages,
+          "Noto Emoji": notoEmojiImages,
+        };
+
+        const keyMap = {
+          Mulberry: item.filename,
+          OpenMoji: item.hexcode,
+          Picom: item.filename,
+          Sclera: item.filename,
+          Bliss: item.filename,
+          "Noto Emoji": item.filename,
+        };
+
+        const imageResource = imageMap[sourceName]?.[keyMap[sourceName]];
+
+        if (imageResource) {
+          try {
+            const asset = Asset.fromModule(imageResource);
+            await asset.downloadAsync();
+            if (asset.localUri) {
+              selectionItem.localUri = asset.localUri;
+            } else {
+              throw new Error("Asset downloaded but no local URI available.");
+            }
+          } catch (e) {
+            console.error("Failed to load local asset:", e);
+            Alert.alert("Error", "Could not load the selected local symbol.");
+            return;
+          }
+        } else {
+          Alert.alert(
+            "Error",
+            `Could not find the image resource for selection.`
+          );
+          return;
+        }
       }
+      setSelection([...selection, selectionItem]);
     } else {
       let symbolName =
         sourceName === "Mulberry" ? item["symbol-en"] : item.name;
-      selectSymbol(symbolName, sourceName);
+      selectSymbol(symbolName, sourceName, item.filename);
     }
   };
 
@@ -580,8 +590,9 @@ export default function PickerScreen() {
                   onPress={() => handleSymbolPress(item.item, sourceName)}
                 />
               )}
-              // FIX: Use refIndex for a guaranteed unique key
-              keyExtractor={(item) => `${sourceName}-${item.refIndex}`}
+              keyExtractor={(item, index) =>
+                `${sourceName}-${item.refIndex}-${index}`
+              }
               horizontal={true}
               showsHorizontalScrollIndicator={false}
             />
