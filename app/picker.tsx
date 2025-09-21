@@ -30,7 +30,7 @@ import {
   saveCombinedSymbol,
 } from "../services/cachingService";
 import * as SecureStore from "expo-secure-store";
-import { Ionicons } from "@expo/vector-icons"; // Using icons for a cleaner toolbar
+import { Ionicons } from "@expo/vector-icons";
 
 // Local Symbol Data (imports remain the same)
 import { mulberryData } from "../assets/mulberrySymbols.js";
@@ -53,7 +53,6 @@ import SymbolItem from "../components/SymbolItem";
 import TextSymbolModal from "../components/TextSymbolModal";
 import CombinePreviewModal from "../components/CombinePreviewModal";
 
-// --- (Fuse.js setup remains the same) ---
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
   includeScore: true,
@@ -86,28 +85,22 @@ const fuseNotoEmoji = new Fuse(notoEmojiData, {
 });
 
 export default function PickerScreen() {
-  // --- STATE ---
   const [searchTerm, setSearchTerm] = useState("");
   const [textSymbolInput, setTextSymbolInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
-
   const [searchResults, setSearchResults] = useState({});
   const [isApiLoading, setIsApiLoading] = useState(false);
   const [flaticonResults, setFlaticonResults] = useState([]);
   const [isFlaticonLoading, setIsFlaticonLoading] = useState(false);
-
   const [isTextModalVisible, setIsTextModalVisible] = useState(false);
   const [isMultiSelect, setIsMultiSelect] = useState(false);
   const [selection, setSelection] = useState([]);
   const [isOrType, setIsOrType] = useState(true);
   const [isCombineModalVisible, setIsCombineModalVisible] = useState(false);
-
   const [flaticonApiKey, setFlaticonApiKey] = useState<string | null>(null);
-
-  // New state for collapsible toolbar inputs
-  const [activeInput, setActiveInput] = useState<"search" | "text" | null>(
-    null
-  );
+  const [activeInput, setActiveInput] = useState<
+    "search" | "text" | "note" | null
+  >(null);
 
   const deckData = useDeckStore((state) => state.deckData);
   const currentIndex = useDeckStore((state) => state.currentIndex);
@@ -469,11 +462,6 @@ export default function PickerScreen() {
       toggleMultiSelect();
     }
   };
-  const handleSaveNote = () => {
-    addNote(noteInput);
-    Alert.alert("Note Saved!");
-    Keyboard.dismiss();
-  };
 
   useEffect(() => {
     const newWordQuery = deckData[currentIndex]?.english;
@@ -500,7 +488,7 @@ export default function PickerScreen() {
     setIsMultiSelect(!isMultiSelect);
     setSelection([]);
   };
-  const toggleInputVisibility = (inputType: "search" | "text") => {
+  const toggleInputVisibility = (inputType: "search" | "text" | "note") => {
     setActiveInput((current) => (current === inputType ? null : inputType));
   };
   const handleCombine = () => {
@@ -509,6 +497,13 @@ export default function PickerScreen() {
       return;
     }
     setIsCombineModalVisible(true);
+  };
+
+  const handleSaveNote = () => {
+    addNote(noteInput);
+    setActiveInput(null); // Close the input panel
+    Keyboard.dismiss();
+    Alert.alert("Note Saved!");
   };
 
   const screenOptions = useMemo(
@@ -551,9 +546,12 @@ export default function PickerScreen() {
         <Text style={styles.wordText} numberOfLines={1} adjustsFontSizeToFit>
           {currentWord?.english || "N/A"}
         </Text>
+        {/* --- ADDED: Displays the saved note --- */}
+        {currentWord?.notes ? (
+          <Text style={styles.noteTextDisplay}>Note: {currentWord.notes}</Text>
+        ) : null}
       </View>
 
-      {/* --- REFACTORED TOOLBAR with LABELS --- */}
       <View style={styles.toolbarContainer}>
         <TouchableOpacity
           style={styles.toolbarButton}
@@ -590,7 +588,27 @@ export default function PickerScreen() {
                 : styles.toolbarLabel
             }
           >
-            Text Input
+            Text
+          </Text>
+        </TouchableOpacity>
+        {/* --- ADDED: Note button in toolbar --- */}
+        <TouchableOpacity
+          style={styles.toolbarButton}
+          onPress={() => toggleInputVisibility("note")}
+        >
+          <Ionicons
+            name="document-text-outline"
+            size={24}
+            color={activeInput === "note" ? "#007AFF" : "white"}
+          />
+          <Text
+            style={
+              activeInput === "note"
+                ? styles.toolbarLabelActive
+                : styles.toolbarLabel
+            }
+          >
+            Note
           </Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.toolbarButton} onPress={handleSearch}>
@@ -613,7 +631,7 @@ export default function PickerScreen() {
           onPress={toggleMultiSelect}
         >
           <Ionicons name="copy" size={24} color="white" />
-          <Text style={styles.toolbarLabel}>Combine</Text>
+          <Text style={styles.toolbarLabel}>Select</Text>
         </TouchableOpacity>
       </View>
 
@@ -652,12 +670,28 @@ export default function PickerScreen() {
           </TouchableOpacity>
         </View>
       )}
+      {/* --- ADDED: Collapsible input for notes --- */}
+      {activeInput === "note" && (
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Add a note for this word..."
+            placeholderTextColor="#888"
+            value={noteInput}
+            onChangeText={setNoteInput}
+            onSubmitEditing={handleSaveNote}
+            autoFocus={true}
+          />
+          <TouchableOpacity style={styles.goButton} onPress={handleSaveNote}>
+            <Text style={styles.navButtonText}>Save</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <ScrollView
         style={styles.resultsScrollView}
         keyboardShouldPersistTaps="handled"
       >
-        {/* ... (rest of the component is unchanged) ... */}
         {Object.keys(searchResults).map((sourceName) => (
           <View key={sourceName} style={styles.sourceContainer}>
             <Text style={styles.sourceHeader}>{sourceName}</Text>
@@ -703,6 +737,7 @@ export default function PickerScreen() {
           </View>
         )}
       </ScrollView>
+
       {isMultiSelect && (
         <View style={styles.trayContainer}>
           <Text style={styles.trayTitle}>
@@ -738,22 +773,9 @@ export default function PickerScreen() {
           </View>
         </View>
       )}
-      <View style={styles.notesContainer}>
-        <TextInput
-          style={styles.notesInput}
-          placeholder="Add a note for this word..."
-          placeholderTextColor="#888"
-          value={noteInput}
-          onChangeText={setNoteInput}
-          onSubmitEditing={handleSaveNote}
-        />
-        <TouchableOpacity
-          style={styles.saveNoteButton}
-          onPress={handleSaveNote}
-        >
-          <Text style={styles.navButtonText}>Save Note</Text>
-        </TouchableOpacity>
-      </View>
+
+      {/* --- REMOVED: Old persistent notes section --- */}
+
       <View style={styles.navContainer}>
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
@@ -770,6 +792,7 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>{"Next >>"}</Text>
         </TouchableOpacity>
       </View>
+
       <CombinePreviewModal
         visible={isCombineModalVisible}
         selection={selection}
@@ -804,27 +827,34 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center",
   },
-  // --- UPDATED & NEW TOOLBAR STYLES ---
+  // NEW style for displaying the saved note
+  noteTextDisplay: {
+    color: "#FF9500", // Orange color to stand out
+    fontSize: 14,
+    fontStyle: "italic",
+    textAlign: "center",
+    marginTop: 4,
+  },
   toolbarContainer: {
     flexDirection: "row",
-    justifyContent: "space-around",
+    justifyContent: "space-evenly",
     backgroundColor: "#2C2C2E",
     borderRadius: 8,
     paddingVertical: 4,
     marginBottom: 10,
   },
   toolbarButton: {
-    flex: 1, // Make buttons take equal width
-    alignItems: "center", // Center icon and text
-    padding: 4,
+    flex: 1,
+    alignItems: "center",
+    padding: 1,
   },
   toolbarLabel: {
     color: "white",
     fontSize: 10,
-    marginTop: 2, // Space between icon and label
+    marginTop: 2,
   },
   toolbarLabelActive: {
-    color: "#007AFF", // Active color
+    color: "#007AFF",
     fontSize: 10,
     marginTop: 2,
   },
@@ -832,7 +862,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#007AFF",
     borderRadius: 6,
   },
-  // --- ---
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -903,28 +932,4 @@ const styles = StyleSheet.create({
   },
   switchRow: { flexDirection: "row", alignItems: "center" },
   label: { color: "#ccc", marginRight: 10 },
-  notesContainer: {
-    flexDirection: "row",
-    width: "100%",
-    paddingHorizontal: 10,
-    marginVertical: 10,
-    alignItems: "center",
-  },
-  notesInput: {
-    flex: 1,
-    backgroundColor: "#333",
-    color: "white",
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    fontSize: 16,
-    marginRight: 10,
-  },
-  saveNoteButton: {
-    backgroundColor: "#FF9500",
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    justifyContent: "center",
-  },
 });
