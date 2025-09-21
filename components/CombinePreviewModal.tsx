@@ -9,7 +9,6 @@ import {
   Button,
   ActivityIndicator,
   Alert,
-  ScrollView,
 } from "react-native";
 import { Svg, Image as SvgImage, Text as SvgText } from "react-native-svg";
 import ViewShot from "react-native-view-shot";
@@ -17,6 +16,7 @@ import * as FileSystem from "expo-file-system/legacy";
 
 const IMG_SIZE = 512;
 const SEPARATOR_WIDTH = 250;
+const SEPARATOR_VERTICAL_OFFSET = 90;
 
 interface CombinePreviewModalProps {
   visible: boolean;
@@ -26,14 +26,23 @@ interface CombinePreviewModalProps {
   onSave: (result: { base64Data: string; combinedName: string }) => void;
 }
 
-const downloadImageToTemp = async (uri: string, index: number) => {
-  if (!uri.startsWith("http")) {
-    return uri;
-  }
+const processImageToTemp = async (uri: string, index: number) => {
+  if (!uri) return null;
   const tempFileUri =
     FileSystem.cacheDirectory + `combine_temp_${index}_${Date.now()}.png`;
-  const downloadResult = await FileSystem.downloadAsync(uri, tempFileUri);
-  return downloadResult.uri;
+
+  try {
+    if (uri.startsWith("http")) {
+      const downloadResult = await FileSystem.downloadAsync(uri, tempFileUri);
+      return downloadResult.uri;
+    } else {
+      await FileSystem.copyAsync({ from: uri, to: tempFileUri });
+      return tempFileUri;
+    }
+  } catch (e) {
+    console.error(`Failed to process URI ${uri}:`, e);
+    return null;
+  }
 };
 
 export default function CombinePreviewModal({
@@ -53,13 +62,20 @@ export default function CombinePreviewModal({
       const loadImages = async () => {
         setIsLoading(true);
         try {
-          const localUris = await Promise.all(
-            selection.map((item, index) =>
-              downloadImageToTemp(item.imageUrl, index)
-            )
+          const urisToProcess = selection.map(
+            (item) => item.imageUrl || item.localUri
           );
+          const tempUris = await Promise.all(
+            urisToProcess.map((uri, index) => processImageToTemp(uri, index))
+          );
+
+          const validUris = tempUris.filter(Boolean);
+          if (validUris.length !== selection.length) {
+            throw new Error("One or more images failed to load.");
+          }
+
           const base64Sources = await Promise.all(
-            localUris.map((uri) =>
+            validUris.map((uri) =>
               FileSystem.readAsStringAsync(uri, { encoding: "base64" })
             )
           );
@@ -68,7 +84,7 @@ export default function CombinePreviewModal({
           console.error("Error loading images for combination:", error);
           Alert.alert(
             "Error",
-            "Could not load one or more images for combining."
+            `Could not load one or more images. ${error.message}`
           );
           onClose();
         } finally {
@@ -84,6 +100,7 @@ export default function CombinePreviewModal({
     try {
       const base64Data = await viewShotRef.current.capture({
         result: "base64",
+        format: "png",
       });
       const combinedName = selection.map((s) => s.name).join(" / ");
       onSave({ base64Data, combinedName });
@@ -97,9 +114,10 @@ export default function CombinePreviewModal({
   const totalWidth =
     selection.length * IMG_SIZE + numSeparators * SEPARATOR_WIDTH;
 
+  // FIX: This scale value will be used in a transform to shrink the view
   const scale =
-    previewContainerWidth > 0 && totalWidth > previewContainerWidth
-      ? (previewContainerWidth - 20) / totalWidth
+    previewContainerWidth > 0 && totalWidth > 0
+      ? Math.min(1, previewContainerWidth / totalWidth)
       : 1;
 
   return (
@@ -112,7 +130,6 @@ export default function CombinePreviewModal({
       <View style={styles.centeredView}>
         <View style={styles.modalView}>
           <Text style={styles.modalTitle}>Combine Symbols</Text>
-
           <View
             style={styles.previewContainer}
             onLayout={(event) =>
@@ -122,6 +139,7 @@ export default function CombinePreviewModal({
             {isLoading ? (
               <ActivityIndicator size="large" />
             ) : (
+              // FIX: Removed ScrollView and applied scale transform directly
               <ViewShot
                 ref={viewShotRef}
                 options={{ format: "png", quality: 1.0 }}
@@ -149,13 +167,13 @@ export default function CombinePreviewModal({
                             <SvgText
                               x={xOffset + IMG_SIZE + SEPARATOR_WIDTH / 2}
                               y={IMG_SIZE / 2}
-
-                              dy={90}
+                              dy={SEPARATOR_VERTICAL_OFFSET}
                               dominantBaseline="middle"
                               textAnchor="middle"
                               fontSize={250}
                               fill="black"
                               fontFamily="sans-serif"
+                              fontWeight="bold"
                             >
                               ||
                             </SvgText>
@@ -207,13 +225,13 @@ const styles = StyleSheet.create({
   },
   previewContainer: {
     width: "100%",
-    height: 150,
+    height: 150, // This acts as a max-height now
     backgroundColor: "#1C1C1E",
     borderRadius: 8,
     marginBottom: 20,
     justifyContent: "center",
     alignItems: "center",
-    overflow: "hidden",
+    overflow: "hidden", // Important for containing the scaled view
   },
   buttonContainer: {
     flexDirection: "row",

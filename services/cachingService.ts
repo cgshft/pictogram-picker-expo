@@ -1,6 +1,7 @@
 // services/cachingService.ts
-import * as FileSystem from 'expo-file-system/legacy';
-import { Directory, File, Paths } from 'expo-file-system';
+
+import { Directory, File } from 'expo-file-system';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
 import Papa from 'papaparse';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -18,7 +19,7 @@ export const getRepositoryDirectory = async (): Promise<Directory | null> => {
     } else {
       Alert.alert(
         "Select Repository Folder",
-        "Please use your file manager to create a folder (e.g., 'SymbolPickerRepo'), then select that folder."
+        "Please create a folder (e.g., 'SymbolPickerRepo'), then select it."
       );
       const repoDir = await Directory.pickDirectoryAsync();
       if (repoDir) {
@@ -33,156 +34,105 @@ export const getRepositoryDirectory = async (): Promise<Directory | null> => {
 };
 
 export const setupRepositoryAndGetFile = async (repoDir: Directory): Promise<File | null> => {
-  if (metadataFileHandle) {
-    return metadataFileHandle;
-  }
-  try {
-    const contents = await repoDir.list();
-    let metadataFile = contents.find(item => item.name === METADATA_CSV_FILENAME && item instanceof File) as File;
+    if (metadataFileHandle) return metadataFileHandle;
+    try {
+        const contents = await repoDir.list();
+        let metadataFile = contents.find(item => item.name === METADATA_CSV_FILENAME && item instanceof File) as File;
 
-    if (!metadataFile) {
-      const conflictingDir = contents.find(item => item.name === METADATA_CSV_FILENAME && item instanceof Directory);
-      if (conflictingDir) {
-        await conflictingDir.delete();
-      }
-      metadataFile = await repoDir.createFile(METADATA_CSV_FILENAME);
-      const headers = Papa.unparse([{ timestamp: '', search_query: '', source: '', symbol_name: '', symbol_id: '', original_url: '', saved_path: '' }]);
-      await metadataFile.write(headers);
+        if (!metadataFile) {
+            // FIX: Access StorageAccessFramework through the LEGACY FileSystem import
+            const fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(repoDir.uri, METADATA_CSV_FILENAME, 'text/csv');
+            const headers = Papa.unparse([{ timestamp: '', search_query: '', source: '', symbol_name: '', symbol_id: '', original_url: '', saved_path: '' }]);
+            await FileSystemLegacy.writeAsStringAsync(fileUri, headers, { encoding: 'utf8' });
+            metadataFile = new File(fileUri);
+        }
+        metadataFileHandle = metadataFile;
+        return metadataFileHandle;
+    } catch (e) {
+        console.error('[Cache Service] CRITICAL ERROR in setupRepository:', e);
+        Alert.alert(
+          "Permission Error",
+          `Could not create necessary metadata files. ${e.message}`
+        );
+        return null;
     }
-    metadataFileHandle = metadataFile;
-    return metadataFileHandle;
-  } catch (e) {
-    console.error('[Cache Service] CRITICAL ERROR in setupRepository:', e);
-    return null;
-  }
 };
 
 export const cacheApiResults = async (results, sourceName, searchQuery, repoDir, metadataFile) => {
-  if (Platform.OS === 'web' || !results || results.length === 0) return;
-  if (!repoDir || !metadataFile) return;
-
-  try {
-    let sourceDir = (await repoDir.list()).find(item => item.name === sourceName && item instanceof Directory) as Directory;
-    if (!sourceDir) {
-      sourceDir = await repoDir.createDirectory(sourceName);
+    if (Platform.OS === 'web' || !results || results.length === 0) return;
+    if (!repoDir || !metadataFile) return;
+    try {
+        let sourceDir = (await repoDir.list()).find(item => item.name === sourceName && item instanceof Directory) as Directory;
+        if (!sourceDir) {
+            sourceDir = await repoDir.createDirectory(sourceName);
+        }
+        const sourceDirContents = await sourceDir.list();
+        const newMetadataRows = [];
+        for (const result of results) {
+            const { id, name, imageUrl } = result.item;
+            try {
+                const response = await fetch(imageUrl);
+                if (!response.ok) continue;
+                const contentType = response.headers.get('content-type') || 'application/octet-stream';
+                let fileExtension = 'png';
+                if (contentType.includes('image/svg')) fileExtension = 'svg';
+                else if (contentType.includes('image/jpeg')) fileExtension = 'jpg';
+                const safeName = (name || 'untitled').replace(/[^a-zA-Z0-9]/g, '_');
+                const localFilename = `${safeName}_${id}.${fileExtension}`;
+                if (sourceDirContents.some(item => item.name === localFilename)) continue;
+                const destinationFile = await sourceDir.createFile(localFilename, contentType);
+                const imageBytes = await response.arrayBuffer();
+                await destinationFile.write(new Uint8Array(imageBytes));
+                newMetadataRows.push({
+                    timestamp: new Date().toISOString(), search_query: searchQuery, source: sourceName,
+                    symbol_name: name, symbol_id: id, original_url: imageUrl, saved_path: destinationFile.uri,
+                });
+            } catch (e) {
+                console.error(`Failed to download/save symbol: ${name}`, e);
+            }
+        }
+        if (newMetadataRows.length > 0) {
+            const newCsvString = Papa.unparse(newMetadataRows, { header: false });
+            const existingContent = await metadataFile.text();
+            const finalContent = existingContent.trim() + '\n' + newCsvString;
+            await metadataFile.write(finalContent);
+        }
+    } catch (e) {
+        Alert.alert("Cache Error", `Failed to save symbols. ${e.message}`);
     }
-    const sourceDirContents = await sourceDir.list();
-    const newMetadataRows = [];
-
-    for (const result of results) {
-      const { id, name, imageUrl } = result.item;
-      try {
-        const response = await fetch(imageUrl);
-        if (!response.ok) continue;
-
-        const contentType = response.headers.get('content-type') || 'application/octet-stream';
-        let fileExtension = 'png';
-        if (contentType.includes('image/svg')) fileExtension = 'svg';
-        else if (contentType.includes('image/jpeg')) fileExtension = 'jpg';
-        
-        const safeName = (name || 'untitled').replace(/[^a-zA-Z0-9]/g, '_');
-        const localFilename = `${safeName}_${id}.${fileExtension}`;
-
-        if (sourceDirContents.some(item => item.name === localFilename)) continue;
-        
-        const destinationFile = await sourceDir.createFile(localFilename, contentType);
-        const imageBytes = await response.arrayBuffer();
-        await destinationFile.write(new Uint8Array(imageBytes));
-        
-        newMetadataRows.push({
-          timestamp: new Date().toISOString(), search_query: searchQuery, source: sourceName,
-          symbol_name: name, symbol_id: id, original_url: imageUrl, saved_path: destinationFile.uri,
-        });
-      } catch (e) {
-        console.error(`Failed to download/save symbol: ${name}`, e);
-      }
-    }
-
-    if (newMetadataRows.length > 0) {
-      const newCsvString = Papa.unparse(newMetadataRows, { header: false });
-      const existingContent = await metadataFile.text();
-      const finalContent = existingContent.trim() + '\n' + newCsvString;
-      await metadataFile.write(finalContent);
-    }
-  } catch (e) {
-    Alert.alert("Cache Error", `Failed to save symbols. ${e.message}`);
-  }
 };
 
-export const saveTextSymbol = async (
+const saveDataWithSAF = async (
   repoDir: Directory,
+  subdirectory: string,
   base64Data: string,
   symbolName: string
 ): Promise<{ fileUri: string; filename: string } | null> => {
-  if (!repoDir) return null;
-
   try {
-    // Step 1: Ensure the destination subdirectory exists using the modern API.
-    const repoContents = await repoDir.list();
-    let destinationDir = repoContents.find(
-      (item) => item.name === 'Custom Text' && item instanceof Directory
-    ) as Directory;
-    if (!destinationDir) {
-      destinationDir = await repoDir.createDirectory('Custom Text');
-    }
-
-    // Step 2: Create a unique filename.
-    const safeName = symbolName.replace(/[^a-zA-Z0-9]/g, '_');
-    const finalFilename = `${safeName}_${Date.now()}.png`;
-
-    // Step 3: Create an EMPTY placeholder file at the destination to get a valid, writable URI.
-    const finalFile = await destinationDir.createFile(finalFilename, 'image/png');
-
-    // Step 4: Write the base64 data directly to the placeholder file's URI using the legacy API.
-    await FileSystem.writeAsStringAsync(finalFile.uri, base64Data, {
-      encoding: 'base64',
-    });
-
-    console.log(`Saved new text symbol to: ${finalFile.uri}`);
-    return { fileUri: finalFile.uri, filename: finalFilename };
-
-  } catch (e) {
-    console.error("Failed to save custom text symbol:", e);
-    Alert.alert("Save Error", `Could not save the custom symbol. ${e.message}`);
-    return null;
-  }
-};
-
-export const saveCombinedSymbol = async (
-  repoDir: Directory,
-  base64Data: string,
-  symbolName: string
-): Promise<{ fileUri: string; filename: string } | null> => {
-  if (!repoDir) return null;
-
-  try {
-    // Step 1: Ensure the destination subdirectory exists
-    const repoContents = await repoDir.list();
-    let destinationDir = repoContents.find(
-      (item) => item.name === 'Combined' && item instanceof Directory
-    ) as Directory;
-    if (!destinationDir) {
-      destinationDir = await repoDir.createDirectory('Combined');
-    }
-
-    // Step 2: Create a unique filename
     const safeName = symbolName.replace(/[^a-zA-Z0-9\s/]/g, '_').replace(/\s\/\s/g, '-');
     const finalFilename = `${safeName}_${Date.now()}.png`;
+    
+    // FIX: Access StorageAccessFramework through the LEGACY FileSystem import
+    const fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(
+      repoDir.uri,
+      `${subdirectory}/${finalFilename}`,
+      'image/png'
+    );
 
-    // Step 3: Create an EMPTY placeholder file at the destination to get a valid URI
-    const finalFile = await destinationDir.createFile(finalFilename, 'image/png');
+    await FileSystemLegacy.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' });
 
-    // Step 4: Write the base64 data directly to the placeholder file's URI
-    await FileSystem.writeAsStringAsync(finalFile.uri, base64Data, {
-      encoding: 'base64',
-    });
-
-    console.log(`Saved combined symbol to: ${finalFile.uri}`);
-    return { fileUri: finalFile.uri, filename: finalFilename };
+    console.log(`Saved new symbol to: ${fileUri}`);
+    return { fileUri, filename: `${subdirectory}/${finalFilename}` };
 
   } catch (e) {
-    console.error("Failed to save combined symbol:", e);
-    Alert.alert("Save Error", `Could not save the combined symbol. ${e.message}`);
+    console.error(`Failed to save symbol to ${subdirectory}:`, e);
+    Alert.alert("Save Error", `Could not save the symbol. ${e.message}`);
     return null;
   }
 };
+
+export const saveTextSymbol = (repoDir: Directory, base64Data: string, symbolName: string) => 
+    saveDataWithSAF(repoDir, "Custom Text", base64Data, symbolName);
+
+export const saveCombinedSymbol = (repoDir: Directory, base64Data: string, symbolName: string) =>
+    saveDataWithSAF(repoDir, "Combined", base64Data, symbolName);

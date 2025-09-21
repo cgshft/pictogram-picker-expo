@@ -37,8 +37,8 @@ import { scleraData } from "../assets/scleraSymbols.js";
 import { blissData } from "../assets/blissSymbols.js";
 import { notoEmojiData } from "../assets/notoEmojiSymbols.js";
 
-// Local Symbol Image Data (for web downloads)
-import { mulberrySvgData } from "../assets/mulberrySvgData.js";
+// Local Symbol Image Data
+import { mulberryImages } from "../assets/mulberryImages.js";
 import { openmojiImages } from "../assets/openmojiImages.js";
 import { picomImages } from "../assets/picomImages.js";
 import { scleraImages } from "../assets/scleraImages.js";
@@ -50,7 +50,6 @@ import SymbolItem from "../components/SymbolItem";
 import TextSymbolModal from "../components/TextSymbolModal";
 import CombinePreviewModal from "../components/CombinePreviewModal";
 
-// --- SETUP FUSE.JS INDEXES FOR ALL LOCAL SOURCES ---
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
   includeScore: true,
@@ -92,8 +91,6 @@ export default function PickerScreen() {
   const [isFlaticonLoading, setIsFlaticonLoading] = useState(false);
   const [textSymbolInput, setTextSymbolInput] = useState("");
   const [isTextModalVisible, setIsTextModalVisible] = useState(false);
-
-  // State for multi-select mode
   const [isMultiSelect, setIsMultiSelect] = useState(false);
   const [selection, setSelection] = useState([]);
   const [isOrType, setIsOrType] = useState(true);
@@ -109,73 +106,118 @@ export default function PickerScreen() {
 
   const currentWord = deckData[currentIndex];
 
+  const handleSymbolPress = async (item, sourceName) => {
+    const uniqueId = `${sourceName}-${
+      item.filename || item.hexcode || item.id || item["symbol-en"]
+    }`;
+
+    if (isMultiSelect) {
+      if (selection.find((s) => s.uniqueId === uniqueId)) {
+        setSelection(selection.filter((s) => s.uniqueId !== uniqueId));
+        return;
+      }
+
+      if (item.imageUrl) {
+        setSelection([
+          ...selection,
+          {
+            ...item,
+            uniqueId,
+            sourceName,
+            imageUrl: item.imageUrl,
+            name: item.name,
+          },
+        ]);
+        return;
+      }
+
+      const imageMap = {
+        Mulberry: mulberryImages,
+        OpenMoji: openmojiImages,
+        Picom: picomImages,
+        Sclera: scleraImages,
+        Bliss: blissImages,
+        "Noto Emoji": notoEmojiImages,
+      };
+
+      const keyMap = {
+        Mulberry: item.filename,
+        OpenMoji: item.hexcode,
+        Picom: item.filename,
+        Sclera: item.filename,
+        Bliss: item.filename,
+        "Noto Emoji": item.filename,
+      };
+
+      const imageResource = imageMap[sourceName]?.[keyMap[sourceName]];
+
+      if (imageResource) {
+        const localUri = Image.resolveAssetSource(imageResource).uri;
+        const name = item["symbol-en"] || item.name || "Unknown";
+        setSelection([
+          ...selection,
+          { ...item, uniqueId, sourceName, localUri, name },
+        ]);
+      } else {
+        Alert.alert(
+          "Error",
+          `Could not find the image resource for selection.`
+        );
+      }
+    } else {
+      let symbolName =
+        sourceName === "Mulberry" ? item["symbol-en"] : item.name;
+      selectSymbol(symbolName, sourceName);
+    }
+  };
+
   const handleFlaticonSearch = async () => {
     if (FLATICON_API_KEY === "YOUR_API_KEY_HERE" || !FLATICON_API_KEY) {
-      Alert.alert(
-        "API Key Needed",
-        "Please add your Freepik API key to search Flaticon."
-      );
+      Alert.alert("API Key Needed", "Please add your Freepik API key.");
       return;
     }
-
     const query = searchTerm.trim() || currentWord?.english || "";
     if (!query) return;
-
     setIsFlaticonLoading(true);
     setFlaticonResults([]);
-
     const headers = {
       "x-freepik-api-key": FLATICON_API_KEY,
       Accept: "application/json",
     };
-
     try {
       const searchUrl = `https://api.freepik.com/v1/icons?term=${encodeURIComponent(
         query
       )}&limit=16&order=relevance`;
       const searchResponse = await fetch(searchUrl, { headers });
-
-      if (!searchResponse.ok) {
-        throw new Error(
-          `Flaticon search failed: ${searchResponse.status} ${searchResponse.statusText}`
-        );
-      }
-
+      if (!searchResponse.ok)
+        throw new Error(`Flaticon search failed: ${searchResponse.status}`);
       const searchJson = await searchResponse.json();
       const iconItems = (searchJson.data || []).slice(0, 4);
-
       if (iconItems.length === 0) {
         setIsFlaticonLoading(false);
         return;
       }
-
       const downloadUrlPromises = iconItems.map((item) => {
         const downloadUrl = `https://api.freepik.com/v1/icons/${item.id}/download?format=png`;
         return fetch(downloadUrl, { headers }).then((res) => res.json());
       });
-
       const downloadResponses = await Promise.all(downloadUrlPromises);
-
       const processedResults = downloadResponses
         .map((downloadRes, index) => {
           const originalItem = iconItems[index];
           const downloadData = downloadRes.data;
           const imageUrl = downloadData?.url;
           if (!imageUrl) return null;
-
           const name =
             originalItem.description || downloadData.filename || "untitled";
-
           return {
-            item: { id: originalItem.id, name: name, imageUrl: imageUrl },
+            item: { id: originalItem.id, name, imageUrl },
             score: 0,
             refIndex: originalItem.id,
           };
         })
         .filter(Boolean);
-
       setFlaticonResults(processedResults);
-
       if (processedResults.length > 0) {
         const repoDir = await getRepositoryDirectory();
         const metadataFile = repoDir
@@ -243,18 +285,15 @@ export default function PickerScreen() {
     try {
       const repoDir = await getRepositoryDirectory();
       if (!repoDir) return;
-
       const contents = await repoDir.list();
       const metadataFile = contents.find(
         (item) =>
           item.name === "api_symbol_metadata.csv" && item instanceof File
       );
-
       if (!metadataFile) {
-        alert("Metadata log not found. No API symbols have been cached yet.");
+        alert("Metadata log not found.");
         return;
       }
-
       await Sharing.shareAsync(metadataFile.uri, {
         mimeType: "text/csv",
         dialogTitle: "Export your symbol metadata log",
@@ -279,30 +318,6 @@ export default function PickerScreen() {
     [deckName, deckData]
   );
 
-  const handleSymbolPress = async (item, sourceName) => {
-    if (isMultiSelect) {
-      const uniqueId = `${sourceName}-${item.id || item.name}`;
-      if (selection.find((s) => s.uniqueId === uniqueId)) return;
-
-      let imageUrl = item.imageUrl;
-      if (!imageUrl) {
-        Alert.alert(
-          "Multi-select is currently supported for API-based symbols only."
-        );
-        return;
-      }
-      setSelection([...selection, { ...item, uniqueId, imageUrl, sourceName }]);
-    } else {
-      let symbolName =
-        sourceName === "Mulberry" ? item["symbol-en"] : item.name;
-      selectSymbol(symbolName, sourceName);
-
-      if (Platform.OS === "web") {
-        // ... (web download logic remains the same)
-      }
-    }
-  };
-
   const performSearch = async (query: string) => {
     if (!query) {
       setSearchResults({});
@@ -310,9 +325,7 @@ export default function PickerScreen() {
     }
     console.log(`---- NEW SEARCH ----`);
     console.log(`Searching for: "${query}"`);
-
     setFlaticonResults([]);
-
     const mulberryResults = fuseMulberry.search(query).slice(0, 4);
     const openMojiResults = fuseOpenMoji.search(query).slice(0, 4);
     const picomResults = fusePicom.search(query).slice(0, 4);
@@ -341,7 +354,6 @@ export default function PickerScreen() {
         setIsApiLoading(false);
         return;
       }
-
       const arasaacPromise = fetch(
         `https://api.arasaac.org/api/pictograms/en/search/${encodeURIComponent(
           query
@@ -405,7 +417,6 @@ export default function PickerScreen() {
           );
         }
       }
-
       if (Object.keys(newApiResults).length > 0) {
         setSearchResults((prevResults) => ({
           ...prevResults,
@@ -442,7 +453,7 @@ export default function PickerScreen() {
     setIsTextModalVisible(false);
     const repoDir = await getRepositoryDirectory();
     if (!repoDir) {
-      Alert.alert("Error", "Repository directory not set. Cannot save symbol.");
+      Alert.alert("Error", "Repository directory not set.");
       return;
     }
     const savedFile = await saveTextSymbol(repoDir, base64Data, symbolName);
@@ -459,10 +470,7 @@ export default function PickerScreen() {
 
   const handleCombine = () => {
     if (selection.length < 2) {
-      Alert.alert(
-        "Select More Symbols",
-        "Please select at least two symbols to combine."
-      );
+      Alert.alert("Select More Symbols", "Please select at least two symbols.");
       return;
     }
     setIsCombineModalVisible(true);
@@ -499,7 +507,6 @@ export default function PickerScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={screenOptions} />
-
       <View style={styles.wordContainer}>
         <Text style={styles.statusText}>
           Word {currentIndex + 1} of {deckData.length}
@@ -509,7 +516,6 @@ export default function PickerScreen() {
           Symbol: {currentWord?.symbol_name || "None"}
         </Text>
       </View>
-
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.searchInput}
@@ -532,7 +538,6 @@ export default function PickerScreen() {
           </TouchableOpacity>
         </View>
       </View>
-
       <View style={styles.textSymbolContainer}>
         <TextInput
           style={styles.searchInput}
@@ -549,7 +554,6 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>Create</Text>
         </TouchableOpacity>
       </View>
-
       <View style={styles.multiSelectToggleContainer}>
         <TouchableOpacity
           style={[
@@ -563,7 +567,6 @@ export default function PickerScreen() {
           </Text>
         </TouchableOpacity>
       </View>
-
       <ScrollView style={styles.resultsScrollView}>
         {Object.keys(searchResults).map((sourceName) => (
           <View key={sourceName} style={styles.sourceContainer}>
@@ -577,6 +580,7 @@ export default function PickerScreen() {
                   onPress={() => handleSymbolPress(item.item, sourceName)}
                 />
               )}
+              // FIX: Use refIndex for a guaranteed unique key
               keyExtractor={(item) => `${sourceName}-${item.refIndex}`}
               horizontal={true}
               showsHorizontalScrollIndicator={false}
@@ -608,7 +612,6 @@ export default function PickerScreen() {
           </View>
         )}
       </ScrollView>
-
       {isMultiSelect && (
         <View style={styles.trayContainer}>
           <Text style={styles.trayTitle}>
@@ -619,13 +622,16 @@ export default function PickerScreen() {
             showsHorizontalScrollIndicator={false}
             style={styles.trayScrollView}
           >
-            {selection.map((item) => (
-              <Image
-                key={item.uniqueId}
-                source={{ uri: item.imageUrl }}
-                style={styles.trayThumbnail}
-              />
-            ))}
+            {selection.map((item) => {
+              const sourceUri = item.localUri || item.imageUrl;
+              return sourceUri ? (
+                <Image
+                  key={item.uniqueId}
+                  source={{ uri: sourceUri }}
+                  style={styles.trayThumbnail}
+                />
+              ) : null;
+            })}
           </ScrollView>
           <View style={styles.trayControls}>
             <View style={styles.switchRow}>
@@ -637,11 +643,14 @@ export default function PickerScreen() {
               onPress={() => setSelection([])}
               color="#888"
             />
-            <Button title="Combine & Save" onPress={handleCombine} />
+            <Button
+              title="Combine & Save"
+              onPress={handleCombine}
+              disabled={selection.length < 2}
+            />
           </View>
         </View>
       )}
-
       <View style={styles.navContainer}>
         <TouchableOpacity
           style={[styles.navButton, isAtStart && styles.disabledButton]}
@@ -658,7 +667,6 @@ export default function PickerScreen() {
           <Text style={styles.navButtonText}>{"Next >>"}</Text>
         </TouchableOpacity>
       </View>
-
       <CombinePreviewModal
         visible={isCombineModalVisible}
         selection={selection}

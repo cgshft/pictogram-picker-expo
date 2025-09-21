@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const sources = [
+  // Add Mulberry to this list
   {
     name: 'Mulberry',
     imageDir: path.join(__dirname, 'assets', 'mulberry-symbols', 'EN-symbols'),
@@ -47,16 +48,17 @@ const sources = [
   }
 ];
 
+// The rest of the script remains the same
 sources.forEach(source => {
   console.log(`\nProcessing source: ${source.name}`);
   try {
     const imageFiles = fs.readdirSync(source.imageDir).filter(file => file.endsWith('.png'));
     let fileContent = `export const ${source.outputVarName} = {\n`;
-
+    
     for (const file of imageFiles) {
       const name = path.basename(file, '.png');
       const requirePath = `${source.requirePathPrefix}${file}`;
-
+      
       fileContent += `  ${JSON.stringify(name)}: require(${JSON.stringify(requirePath)}),\n`;
     }
 

@@ -1,7 +1,7 @@
+// components/SymbolItem.tsx
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
-// REMOVED: SvgXml and mulberrySvgData
-import { mulberryImages } from "../assets/mulberryImages.js"; // ADDED
+import { mulberryImages } from "../assets/mulberryImages.js";
 import { openmojiImages } from "../assets/openmojiImages.js";
 import { picomImages } from "../assets/picomImages.js";
 import { scleraImages } from "../assets/scleraImages.js";
@@ -28,8 +28,7 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
 
   if (source === "Mulberry") {
     name = item["symbol-en"];
-    // UPDATED: Use require map for PNGs instead of SvgXml
-    const requirePath = mulberryImages[name];
+    const requirePath = mulberryImages[item.filename];
     imageContent = requirePath ? (
       <Image source={requirePath} style={styles.image} resizeMode="contain" />
     ) : (

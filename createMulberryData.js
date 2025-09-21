@@ -8,14 +8,20 @@ const outputFilePath = path.join(__dirname, 'assets', 'mulberrySymbols.js');
 console.log(`Reading Mulberry PNGs from: ${mulberryDir}`);
 
 try {
+  if (!fs.existsSync(mulberryDir)) {
+    throw new Error(`Directory not found: ${mulberryDir}`);
+  }
+
   const mulberryFiles = fs.readdirSync(mulberryDir).filter(file => file.endsWith('.png'));
   const mulberryData = [];
 
   for (const file of mulberryFiles) {
-    const name = path.basename(file, '.png');
+    const baseName = path.basename(file, '.png');
+    
+    // For Mulberry, the name is the filename. We create both properties for consistency.
     mulberryData.push({
-      "symbol-en": name, // For searching with Fuse.js
-      "filename": name   // For looking up the image in mulberryImages.js
+      "symbol-en": baseName, // The name for searching and display
+      "filename": baseName   // The key for the image map
     });
   }
 
