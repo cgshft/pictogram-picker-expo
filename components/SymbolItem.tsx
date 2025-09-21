@@ -1,4 +1,3 @@
-// components/SymbolItem.tsx
 import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { blissImages } from "../assets/blissImages.js";
@@ -19,7 +18,7 @@ interface SymbolItemProps {
     | "Noto Emoji"
     | "ARASAAC"
     | "AACIL"
-    | "Flaticon";
+    | "Flaticon"; // Added Flaticon
   onPress: () => void;
 }
 
@@ -77,7 +76,7 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
   } else if (
     source === "ARASAAC" ||
     source === "AACIL" ||
-    source === "Flaticon"
+    source === "Flaticon" // Added Flaticon
   ) {
     name = item.name;
     imageContent = item.imageUrl ? (
@@ -94,7 +93,6 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
   return (
     <TouchableOpacity style={styles.container} onPress={onPress}>
       <View style={styles.imageContainer}>{imageContent}</View>
-      {/* <Text style={styles.sourceText}>{source}</Text> */}
       <Text style={styles.text} numberOfLines={1} ellipsizeMode="tail">
         {name}
       </Text>
@@ -110,10 +108,7 @@ const styles = StyleSheet.create({
     margin: 3,
     alignItems: "center",
     backgroundColor: "#2C2C2E",
-    // backgroundColor: "#2C2C2E",
     borderRadius: 8,
-    // borderWidth: 1,
-    // borderColor: "#444",
   },
   imageContainer: {
     width: "90%",
@@ -130,12 +125,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: "center",
     marginTop: 2,
-  },
-  sourceText: {
-    color: "#8A8A8E",
-    fontSize: 10,
-    fontWeight: "bold",
-    marginTop: 4,
   },
   errorText: {
     color: "yellow",

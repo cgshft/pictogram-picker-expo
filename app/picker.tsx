@@ -1,56 +1,57 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Asset } from "expo-asset";
-import { File, Paths } from "expo-file-system";
-import * as FileSystemLegacy from "expo-file-system/legacy";
-import { Stack } from "expo-router";
-import * as SecureStore from "expo-secure-store";
-import * as Sharing from "expo-sharing";
-import Fuse from "fuse.js";
-import Papa from "papaparse";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
+  View,
+  Text,
+  StyleSheet,
   ActivityIndicator,
-  Alert,
-  Button,
+  TouchableOpacity,
+  TextInput,
   FlatList,
+  ScrollView,
+  Button,
+  Platform,
+  Alert,
+  Switch,
   Image,
   Keyboard,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
 } from "react-native";
+import { useDeckStore } from "../state/store";
+import { Stack } from "expo-router";
+import Fuse from "fuse.js";
+import * as Sharing from "expo-sharing";
+import { File, Paths } from "expo-file-system";
+import * as FileSystemLegacy from "expo-file-system/legacy";
+import Papa from "papaparse";
+import { Asset } from "expo-asset";
 import {
   cacheApiResults,
   getRepositoryDirectory,
+  setupRepositoryAndGetFile,
+  saveTextSymbol,
   saveCombinedSymbol,
   saveSingleApiSymbol,
-  saveTextSymbol,
-  setupRepositoryAndGetFile,
 } from "../services/cachingService";
-import { useDeckStore } from "../state/store";
+import * as SecureStore from "expo-secure-store";
+import { Ionicons } from "@expo/vector-icons";
 
 // Local Symbol Data & Components
-import { blissImages } from "../assets/blissImages.js";
-import { blissData } from "../assets/blissSymbols.js";
-import { mulberryImages } from "../assets/mulberryImages.js";
 import { mulberryData } from "../assets/mulberrySymbols.js";
-import { notoEmojiImages } from "../assets/notoEmojiImages.js";
-import { notoEmojiData } from "../assets/notoEmojiSymbols.js";
-import { openmojiImages } from "../assets/openmojiImages.js";
 import { openmojiData } from "../assets/openmojiSymbols.js";
-import { picomImages } from "../assets/picomImages.js";
 import { picomData } from "../assets/picomSymbols.js";
-import { scleraImages } from "../assets/scleraImages.js";
 import { scleraData } from "../assets/scleraSymbols.js";
-import CombinePreviewModal from "../components/CombinePreviewModal";
-import SkeletonSymbolItem from "../components/SkeletonSymbolItem";
+import { blissData } from "../assets/blissSymbols.js";
+import { notoEmojiData } from "../assets/notoEmojiSymbols.js";
+import { mulberryImages } from "../assets/mulberryImages.js";
+import { openmojiImages } from "../assets/openmojiImages.js";
+import { picomImages } from "../assets/picomImages.js";
+import { scleraImages } from "../assets/scleraImages.js";
+import { blissImages } from "../assets/blissImages.js";
+import { notoEmojiImages } from "../assets/notoEmojiImages.js";
 import SymbolItem from "../components/SymbolItem";
 import TextSymbolModal from "../components/TextSymbolModal";
+import CombinePreviewModal from "../components/CombinePreviewModal";
+import SkeletonSymbolItem from "../components/SkeletonSymbolItem";
+import ApiKeyModal from "../components/ApiKeyModal"; // Import the new modal
 
 const fuseMulberry = new Fuse(mulberryData, {
   keys: ["symbol-en"],
@@ -92,6 +93,7 @@ const SOURCE_ORDER = [
   "Noto Emoji",
   "Sclera",
   "Bliss",
+  "Flaticon",
 ];
 
 export default function PickerScreen() {
@@ -100,14 +102,13 @@ export default function PickerScreen() {
   const [noteInput, setNoteInput] = useState("");
   const [searchResults, setSearchResults] = useState({});
   const [isApiLoading, setIsApiLoading] = useState(false);
-  const [flaticonResults, setFlaticonResults] = useState([]);
   const [isFlaticonLoading, setIsFlaticonLoading] = useState(false);
   const [isTextModalVisible, setIsTextModalVisible] = useState(false);
   const [isMultiSelect, setIsMultiSelect] = useState(false);
   const [selection, setSelection] = useState([]);
   const [isOrType, setIsOrType] = useState(true);
   const [isCombineModalVisible, setIsCombineModalVisible] = useState(false);
-  const [flaticonApiKey, setFlaticonApiKey] = useState<string | null>(null);
+  const [isApiKeyModalVisible, setIsApiKeyModalVisible] = useState(false); // State for the new modal
   const [activeInput, setActiveInput] = useState<
     "search" | "text" | "note" | null
   >(null);
@@ -149,7 +150,6 @@ export default function PickerScreen() {
           const fileIdentifier = currentWord.symbol_filename;
           if (!fileIdentifier)
             throw new Error("Filename is missing from deck data.");
-
           let fileUriToRead: string;
           if (
             fileIdentifier.startsWith("content://") ||
@@ -171,7 +171,6 @@ export default function PickerScreen() {
                 ? fileIdentifier.split(".")[0]
                 : fileIdentifier;
             const imageResource = imageMap[source]?.[key];
-
             if (imageResource) {
               const asset = Asset.fromModule(imageResource);
               await asset.downloadAsync();
@@ -186,12 +185,9 @@ export default function PickerScreen() {
               );
             }
           }
-
           const base64Content = await FileSystemLegacy.readAsStringAsync(
             fileUriToRead,
-            {
-              encoding: "base64",
-            }
+            { encoding: "base64" }
           );
           setSelectedSymbolUri(`data:image/png;base64,${base64Content}`);
         } catch (e) {
@@ -207,12 +203,190 @@ export default function PickerScreen() {
     }
   }, [viewMode, currentWord]);
 
-  // --- UPDATED to handle single-select for API sources ---
+  const handleFlaticonSearch = async () => {
+    try {
+      const key = await SecureStore.getItemAsync("flaticonApiKey");
+
+      if (!key) {
+        setIsApiKeyModalVisible(true); // Open the custom modal
+        return;
+      }
+
+      const query = searchTerm.trim() || currentWord?.english || "";
+      if (!query) {
+        Alert.alert(
+          "No Search Term",
+          "Please select a word or type a custom search before using Flaticon."
+        );
+        return;
+      }
+
+      setIsFlaticonLoading(true);
+      const headers = { "x-freepik-api-key": key, Accept: "application/json" };
+
+      const searchUrl = `https://api.freepik.com/v1/icons?term=${encodeURIComponent(
+        query
+      )}&limit=16&order=relevance`;
+      const searchResponse = await fetch(searchUrl, { headers });
+      if (!searchResponse.ok)
+        throw new Error(`Flaticon search failed: ${searchResponse.status}`);
+
+      const searchJson = await searchResponse.json();
+      const iconItems = (searchJson.data || []).slice(0, 4);
+
+      if (iconItems.length === 0) {
+        setSearchResults((prev) => ({ ...prev, Flaticon: [] }));
+        return;
+      }
+
+      const downloadResponses = await Promise.all(
+        iconItems.map((item) =>
+          fetch(
+            `https://api.freepik.com/v1/icons/${item.id}/download?format=png`,
+            { headers }
+          ).then((res) => res.json())
+        )
+      );
+
+      const processedResults = downloadResponses
+        .map((downloadRes, index) => {
+          const originalItem = iconItems[index];
+          const imageUrl = downloadRes.data?.url;
+          if (!imageUrl) return null;
+          const name =
+            originalItem.description || downloadRes.data.filename || "untitled";
+          return {
+            item: { id: originalItem.id, name, imageUrl },
+            score: 0,
+            refIndex: originalItem.id,
+          };
+        })
+        .filter(Boolean) as any[];
+
+      setSearchResults((prev) => ({ ...prev, Flaticon: processedResults }));
+
+      if (processedResults.length > 0) {
+        const repoDir = await getRepositoryDirectory();
+        const metadataFile = repoDir
+          ? await setupRepositoryAndGetFile(repoDir)
+          : null;
+        if (repoDir && metadataFile) {
+          cacheApiResults(
+            processedResults,
+            "Flaticon",
+            query,
+            repoDir,
+            metadataFile
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Flaticon API error:", error);
+      Alert.alert(
+        "Error",
+        `Failed to fetch symbols from Flaticon: ${error.message}`
+      );
+    } finally {
+      setIsFlaticonLoading(false);
+    }
+  };
+
+  const handleSaveApiKey = async (key: string) => {
+    try {
+      await SecureStore.setItemAsync("flaticonApiKey", key);
+      setIsApiKeyModalVisible(false);
+      Alert.alert(
+        "API Key Saved",
+        "Your key has been saved. Please press the Flaticon button again to search."
+      );
+    } catch (error) {
+      console.error("Failed to save API key:", error);
+      Alert.alert("Error", "Could not save the API key.");
+    }
+  };
+
+  // Other handlers...
+  const performSearch = async (query: string) => {
+    if (!query) {
+      setSearchResults({});
+      return;
+    }
+    const mulberryResults = fuseMulberry.search(query).slice(0, 4);
+    const openMojiResults = fuseOpenMoji.search(query).slice(0, 4);
+    const picomResults = fusePicom.search(query).slice(0, 4);
+    const scleraResults = fuseSclera.search(query).slice(0, 4);
+    const blissResults = fuseBliss.search(query).slice(0, 4);
+    const notoEmojiResults = fuseNotoEmoji.search(query).slice(0, 4);
+    const localResults = {};
+    if (mulberryResults.length > 0) localResults.Mulberry = mulberryResults;
+    if (openMojiResults.length > 0) localResults.OpenMoji = openMojiResults;
+    if (picomResults.length > 0) localResults.Picom = picomResults;
+    if (scleraResults.length > 0) localResults.Sclera = scleraResults;
+    if (blissResults.length > 0) localResults.Bliss = blissResults;
+    if (notoEmojiResults.length > 0)
+      localResults["Noto Emoji"] = notoEmojiResults;
+    setSearchResults(localResults);
+    setIsApiLoading(true);
+    const repoDir = await getRepositoryDirectory();
+    const metadataFile = repoDir
+      ? await setupRepositoryAndGetFile(repoDir)
+      : null;
+    if (!repoDir || !metadataFile) {
+      setIsApiLoading(false);
+      return;
+    }
+    const arasaacPromise = fetch(
+      `https://api.arasaac.org/api/pictograms/en/search/${encodeURIComponent(
+        query
+      )}`
+    )
+      .then((res) => (res.ok ? res.json() : []))
+      .then((json) => {
+        const results = json
+          .slice(0, 4)
+          .map((r) => ({
+            item: {
+              id: r._id,
+              name: r.keywords?.[0]?.keyword || "untitled",
+              imageUrl: `https://api.arasaac.org/api/pictograms/${r._id}`,
+            },
+            score: 0,
+            refIndex: r._id,
+          }));
+        if (results.length > 0) {
+          setSearchResults((prev) => ({ ...prev, ARASAAC: results }));
+          cacheApiResults(results, "ARASAAC", query, repoDir, metadataFile);
+        }
+      })
+      .catch((e) => console.error("ARASAAC fetch failed:", e));
+    const aacilPromise = fetch(
+      `https://globalsymbols.com/api/v1/labels/search?query=${encodeURIComponent(
+        query
+      )}&symbolset=aac-image-library&language=eng&language_iso_format=639-3&limit=4`
+    )
+      .then((res) => (res.ok ? res.json() : []))
+      .then((json) => {
+        const results = json
+          .map((l) => ({
+            item: { id: l.picto.id, name: l.text, imageUrl: l.picto.image_url },
+            score: 0,
+            refIndex: l.picto.id,
+          }))
+          .slice(0, 4);
+        if (results.length > 0) {
+          setSearchResults((prev) => ({ ...prev, AACIL: results }));
+          cacheApiResults(results, "AACIL", query, repoDir, metadataFile);
+        }
+      })
+      .catch((e) => console.error("AACIL fetch failed:", e));
+    Promise.allSettled([arasaacPromise, aacilPromise]).finally(() => {
+      setIsApiLoading(false);
+    });
+  };
   const handleSymbolPress = async (item, sourceName) => {
     const uniqueId = `${sourceName}-${
       item.filename || item.hexcode || item.id || item["symbol-en"]
     }`;
-
     if (isMultiSelect) {
       if (selection.find((s) => s.uniqueId === uniqueId)) {
         setSelection((prev) => prev.filter((s) => s.uniqueId !== uniqueId));
@@ -267,10 +441,8 @@ export default function PickerScreen() {
       }
       setSelection((currentSelection) => [...currentSelection, selectionItem]);
     } else {
-      // Single-select mode
       const symbolName = item.name || item["symbol-en"];
       if (item.imageUrl) {
-        // It's a remote API symbol, so download and save it.
         const repoDir = await getRepositoryDirectory();
         if (!repoDir) {
           Alert.alert("Error", "Repository directory not set.");
@@ -281,13 +453,11 @@ export default function PickerScreen() {
           selectSymbol(symbolName, sourceName, savedFile.fileUri);
         }
       } else {
-        // It's a local, bundled asset. Just save its identifier.
         const identifier = item.filename || item.hexcode;
         selectSymbol(symbolName, sourceName, identifier);
       }
     }
   };
-
   const handleSaveTextSymbol = async ({ base64Data, symbolName }) => {
     setIsTextModalVisible(false);
     const repoDir = await getRepositoryDirectory();
@@ -314,97 +484,6 @@ export default function PickerScreen() {
       selectSymbol(combinedName, "Combined", savedFile.fileUri);
       toggleMultiSelect();
       nextWord();
-    }
-  };
-
-  // Other handlers...
-  const promptForApiKey = () => {
-    Alert.prompt(
-      "Enter API Key",
-      "Please paste your Flaticon API key. It will be stored securely on your device.",
-      async (keyFromPrompt) => {
-        if (keyFromPrompt) {
-          await SecureStore.setItemAsync("flaticonApiKey", keyFromPrompt);
-          setFlaticonApiKey(keyFromPrompt);
-          Alert.alert("Success", "API Key saved securely.");
-        }
-      }
-    );
-  };
-  const handleFlaticonSearch = async () => {
-    let key = flaticonApiKey;
-    if (!key) {
-      const storedKey = await SecureStore.getItemAsync("flaticonApiKey");
-      if (storedKey) {
-        setFlaticonApiKey(storedKey);
-        key = storedKey;
-      } else {
-        promptForApiKey();
-        return;
-      }
-    }
-    const query = searchTerm.trim() || currentWord?.english || "";
-    if (!query) return;
-    setIsFlaticonLoading(true);
-    setFlaticonResults([]);
-    const headers = { "x-freepik-api-key": key, Accept: "application/json" };
-    try {
-      const searchUrl = `https://api.freepik.com/v1/icons?term=${encodeURIComponent(
-        query
-      )}&limit=16&order=relevance`;
-      const searchResponse = await fetch(searchUrl, { headers });
-      if (!searchResponse.ok)
-        throw new Error(`Flaticon search failed: ${searchResponse.status}`);
-      const searchJson = await searchResponse.json();
-      const iconItems = (searchJson.data || []).slice(0, 4);
-      if (iconItems.length === 0) {
-        setIsFlaticonLoading(false);
-        return;
-      }
-      const downloadUrlPromises = iconItems.map((item) => {
-        const downloadUrl = `https://api.freepik.com/v1/icons/${item.id}/download?format=png`;
-        return fetch(downloadUrl, { headers }).then((res) => res.json());
-      });
-      const downloadResponses = await Promise.all(downloadUrlPromises);
-      const processedResults = downloadResponses
-        .map((downloadRes, index) => {
-          const originalItem = iconItems[index];
-          const downloadData = downloadRes.data;
-          const imageUrl = downloadData?.url;
-          if (!imageUrl) return null;
-          const name =
-            originalItem.description || downloadData.filename || "untitled";
-          return {
-            item: { id: originalItem.id, name, imageUrl },
-            score: 0,
-            refIndex: originalItem.id,
-          };
-        })
-        .filter(Boolean);
-      setFlaticonResults(processedResults);
-      if (processedResults.length > 0) {
-        const repoDir = await getRepositoryDirectory();
-        const metadataFile = repoDir
-          ? await setupRepositoryAndGetFile(repoDir)
-          : null;
-        if (repoDir && metadataFile) {
-          cacheApiResults(
-            processedResults,
-            "Flaticon",
-            query,
-            repoDir,
-            metadataFile
-          );
-        }
-      }
-    } catch (error) {
-      console.error("Flaticon API error:", error);
-      Alert.alert(
-        "Error",
-        `Failed to fetch symbols from Flaticon: ${error.message}`
-      );
-    } finally {
-      setIsFlaticonLoading(false);
     }
   };
   const handleExport = async () => {
@@ -462,110 +541,6 @@ export default function PickerScreen() {
     } catch (error) {
       console.error("Error exporting metadata file:", error);
       alert("Failed to export metadata CSV.");
-    }
-  };
-  const performSearch = async (query: string) => {
-    if (!query) {
-      setSearchResults({});
-      return;
-    }
-    setFlaticonResults([]);
-    const mulberryResults = fuseMulberry.search(query).slice(0, 4);
-    const openMojiResults = fuseOpenMoji.search(query).slice(0, 4);
-    const picomResults = fusePicom.search(query).slice(0, 4);
-    const scleraResults = fuseSclera.search(query).slice(0, 4);
-    const blissResults = fuseBliss.search(query).slice(0, 4);
-    const notoEmojiResults = fuseNotoEmoji.search(query).slice(0, 4);
-    const resultsBySource = {};
-    if (mulberryResults.length > 0) resultsBySource.Mulberry = mulberryResults;
-    if (openMojiResults.length > 0) resultsBySource.OpenMoji = openMojiResults;
-    if (picomResults.length > 0) resultsBySource.Picom = picomResults;
-    if (scleraResults.length > 0) resultsBySource.Sclera = scleraResults;
-    if (blissResults.length > 0) resultsBySource.Bliss = blissResults;
-    if (notoEmojiResults.length > 0)
-      resultsBySource["Noto Emoji"] = notoEmojiResults;
-    setSearchResults(resultsBySource);
-    setIsApiLoading(true);
-    try {
-      const repoDir = await getRepositoryDirectory();
-      const metadataFile = repoDir
-        ? await setupRepositoryAndGetFile(repoDir)
-        : null;
-      if (!repoDir || !metadataFile) {
-        setIsApiLoading(false);
-        return;
-      }
-      const arasaacPromise = fetch(
-        `https://api.arasaac.org/api/pictograms/en/search/${encodeURIComponent(
-          query
-        )}`
-      );
-      const globalSymbolsPromise = fetch(
-        `https://globalsymbols.com/api/v1/labels/search?query=${encodeURIComponent(
-          query
-        )}&symbolset=aac-image-library&language=eng&language_iso_format=639-3&limit=4`
-      );
-      const [arasaacResponse, globalSymbolsResponse] = await Promise.all([
-        arasaacPromise,
-        globalSymbolsPromise,
-      ]);
-      const newApiResults = {};
-      if (arasaacResponse.ok) {
-        const arasaacJson = await arasaacResponse.json();
-        const arasaacResults = arasaacJson.slice(0, 4).map((result) => ({
-          item: {
-            id: result._id,
-            name: result.keywords?.[0]?.keyword || "untitled",
-            imageUrl: `https://api.arasaac.org/api/pictograms/${result._id}`,
-          },
-          score: 0,
-          refIndex: result._id,
-        }));
-        if (arasaacResults.length > 0) {
-          newApiResults.ARASAAC = arasaacResults;
-          cacheApiResults(
-            arasaacResults,
-            "ARASAAC",
-            query,
-            repoDir,
-            metadataFile
-          );
-        }
-      }
-      if (globalSymbolsResponse.ok) {
-        const globalSymbolsJson = await globalSymbolsResponse.json();
-        const processedResults = globalSymbolsJson
-          .map((label) => ({
-            item: {
-              id: label.picto.id,
-              name: label.text,
-              imageUrl: label.picto.image_url,
-            },
-            score: 0,
-            refIndex: label.picto.id,
-          }))
-          .slice(0, 4);
-        if (processedResults.length > 0) {
-          newApiResults["AACIL"] = processedResults;
-          cacheApiResults(
-            processedResults,
-            "AACIL",
-            query,
-            repoDir,
-            metadataFile
-          );
-        }
-      }
-      if (Object.keys(newApiResults).length > 0) {
-        setSearchResults((prevResults) => ({
-          ...prevResults,
-          ...newApiResults,
-        }));
-      }
-    } catch (error) {
-      console.error("API search error:", error);
-    } finally {
-      setIsApiLoading(false);
     }
   };
   const handleSaveNote = () => {
@@ -627,7 +602,6 @@ export default function PickerScreen() {
   const isAtStart = currentIndex === 0;
   const isAtEnd = currentIndex === deckData.length - 1;
 
-  // The rest of the JSX remains the same
   return (
     <View style={styles.container}>
       <Stack.Screen options={screenOptions} />
@@ -806,7 +780,6 @@ export default function PickerScreen() {
           </TouchableOpacity>
         </View>
       )}
-
       {viewMode === "search" && (
         <ScrollView
           style={styles.resultsScrollView}
@@ -816,6 +789,8 @@ export default function PickerScreen() {
             const results = searchResults[sourceName];
             const isApiSource =
               sourceName === "ARASAAC" || sourceName === "AACIL";
+            const isFlaticonSourceAndLoading =
+              sourceName === "Flaticon" && isFlaticonLoading;
             if (results && results.length > 0) {
               return (
                 <View key={sourceName} style={styles.sourceContainer}>
@@ -840,7 +815,10 @@ export default function PickerScreen() {
                   />
                 </View>
               );
-            } else if (isApiLoading && isApiSource) {
+            } else if (
+              (isApiLoading && isApiSource) ||
+              isFlaticonSourceAndLoading
+            ) {
               return (
                 <View
                   key={`${sourceName}-loading`}
@@ -860,40 +838,6 @@ export default function PickerScreen() {
             }
             return null;
           })}
-          {isFlaticonLoading && (
-            <View style={styles.sourceContainer}>
-              <View style={styles.sourceHeaderContainer}>
-                <Text style={styles.sourceHeaderText}>Flaticon</Text>
-              </View>
-              <View style={{ flexDirection: "row" }}>
-                <SkeletonSymbolItem />
-                <SkeletonSymbolItem />
-                <SkeletonSymbolItem />
-                <SkeletonSymbolItem />
-              </View>
-            </View>
-          )}
-          {!isFlaticonLoading && flaticonResults.length > 0 && (
-            <View style={styles.sourceContainer}>
-              <View style={styles.sourceHeaderContainer}>
-                <Text style={styles.sourceHeaderText}>Flaticon</Text>
-              </View>
-              <FlatList
-                style={{ flex: 1 }}
-                data={flaticonResults}
-                renderItem={({ item }) => (
-                  <SymbolItem
-                    item={item.item}
-                    source={"Flaticon" as any}
-                    onPress={() => handleSymbolPress(item.item, "Flaticon")}
-                  />
-                )}
-                keyExtractor={(item) => `Flaticon-${item.refIndex}`}
-                horizontal={true}
-                showsHorizontalScrollIndicator={false}
-              />
-            </View>
-          )}
         </ScrollView>
       )}
       {viewMode === "display" && (
@@ -976,6 +920,12 @@ export default function PickerScreen() {
         text={textSymbolInput}
         onClose={() => setIsTextModalVisible(false)}
         onSave={handleSaveTextSymbol}
+      />
+      {/* ADDED: The new API Key Modal */}
+      <ApiKeyModal
+        visible={isApiKeyModalVisible}
+        onClose={() => setIsApiKeyModalVisible(false)}
+        onSave={handleSaveApiKey}
       />
     </View>
   );
