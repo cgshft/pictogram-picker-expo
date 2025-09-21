@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,8 @@ import {
   Image,
 } from "react-native";
 import { WebView } from "react-native-webview";
-import { File, cacheDirectory, downloadAsync } from "expo-file-system";
+// FIX: Import the legacy module for deprecated functions
+import * as FileSystem from "expo-file-system/legacy";
 import { Asset } from "expo-asset";
 
 const IMG_SIZE = 512;
@@ -28,22 +29,32 @@ interface CombinePreviewModalProps {
 // Helper to get a local file URI for an image asset
 const getLocalImageUri = async (item: any): Promise<string> => {
   if (item.localUri) return item.localUri;
+
+  // Handle remote images from APIs
   if (item.imageUrl) {
-    const tempFileUri = cacheDirectory + `combine_remote_${Date.now()}.png`;
+    const tempFileUri =
+      FileSystem.cacheDirectory + `combine_remote_${Date.now()}.png`;
     try {
-      const { uri } = await downloadAsync(item.imageUrl, tempFileUri);
+      // FIX: Use the legacy downloadAsync
+      const { uri } = await FileSystem.downloadAsync(
+        item.imageUrl,
+        tempFileUri
+      );
       return uri;
     } catch (e) {
       console.error(`Failed to download ${item.imageUrl}`, e);
       throw e;
     }
   }
+
+  // Handle local, bundled images
   if (item.imageResource) {
     const asset = Asset.fromModule(item.imageResource);
     await asset.downloadAsync();
     if (!asset.localUri) throw new Error("Asset has no local URI");
     return asset.localUri;
   }
+
   throw new Error(`No image source found for item ${item.name || "unknown"}`);
 };
 
@@ -127,15 +138,13 @@ export default function CombinePreviewModal({
         setHtmlToRender(null);
         try {
           const uris = await Promise.all(selection.map(getLocalImageUri));
-
-          // **THE FIX**: Use the modern, non-deprecated File API
           const base64Sources = await Promise.all(
-            uris.map(async (uri) => {
-              const file = new File(uri);
-              return await file.base64();
-            })
+            uris.map((uri) =>
+              FileSystem.readAsStringAsync(uri, {
+                encoding: "base64",
+              })
+            )
           );
-
           setHtmlToRender(createCombineHtml(base64Sources, isOrType));
         } catch (error) {
           console.error("Error processing images for combination:", error);
@@ -254,3 +263,4 @@ const styles = StyleSheet.create({
     width: "100%",
   },
 });
+    
