@@ -1,2 +1,4 @@
 # TODOs
 1. Update csv export format to be more verbose and have more descriptive filenames (include source)
+1. Fix any ? symbol display errors in app. Israel-flag and Isle-of-Man-flag in Noto Emoji
+1. Remove the combined symbol selection logging once no duplication has been confirmed
