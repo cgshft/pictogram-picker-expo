@@ -1,8 +1,7 @@
-// components/SymbolItem.tsx
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
-import { SvgXml } from "react-native-svg";
-import { mulberrySvgData } from "../assets/mulberrySvgData.js";
+// REMOVED: SvgXml and mulberrySvgData
+import { mulberryImages } from "../assets/mulberryImages.js"; // ADDED
 import { openmojiImages } from "../assets/openmojiImages.js";
 import { picomImages } from "../assets/picomImages.js";
 import { scleraImages } from "../assets/scleraImages.js";
@@ -20,7 +19,7 @@ interface SymbolItemProps {
     | "Noto Emoji"
     | "ARASAAC"
     | "AAC Image Library"
-    | "Flaticon"; // Add Flaticon to the type list
+    | "Flaticon";
   onPress: () => void;
 }
 
@@ -29,10 +28,10 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
 
   if (source === "Mulberry") {
     name = item["symbol-en"];
-    const sanitizedName = name.replace(/,/g, "");
-    const svgContent = mulberrySvgData[sanitizedName];
-    imageContent = svgContent ? (
-      <SvgXml xml={svgContent} width="80%" height="80%" />
+    // UPDATED: Use require map for PNGs instead of SvgXml
+    const requirePath = mulberryImages[name];
+    imageContent = requirePath ? (
+      <Image source={requirePath} style={styles.image} resizeMode="contain" />
     ) : (
       <Text style={styles.errorText}>?</Text>
     );

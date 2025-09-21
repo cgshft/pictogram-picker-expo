@@ -1,8 +1,6 @@
-// state/store.js
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Key for storing the deck state in AsyncStorage
 const DECK_STORAGE_KEY = '@CurrentDeckState';
 
 export const useDeckStore = create((set, get) => ({
@@ -33,16 +31,15 @@ export const useDeckStore = create((set, get) => ({
     currentIndex: Math.max(state.currentIndex - 1, 0),
   })),
 
-  selectSymbol: (symbolName, source, customFilename = null) => { // Add customFilename param
+  selectSymbol: (symbolName, source, customFilename = null) => {
     const { deckData, currentIndex, nextWord } = get();
     const currentWord = deckData[currentIndex];
 
-    // --- MODIFIED --- Use the custom filename if provided
     let finalFilename = customFilename;
     if (!finalFilename) {
       const sanitizedWord = (currentWord.english || `entry${currentIndex}`).replace(/[^a-zA-Z0-9]/g, '_');
-      // Fallback for original behavior (e.g. Mulberry symbols)
-      finalFilename = `${sanitizedWord}_${source}_${symbolName}.svg`;
+      // UPDATED: Changed fallback extension from .svg to .png
+      finalFilename = `${sanitizedWord}_${source}_${symbolName}.png`;
     }
 
     const newData = [...deckData];
@@ -57,7 +54,6 @@ export const useDeckStore = create((set, get) => ({
     nextWord();
   },
   
-  // New action to restore state from AsyncStorage
   restoreState: async () => {
     try {
       const jsonValue = await AsyncStorage.getItem(DECK_STORAGE_KEY);
@@ -69,15 +65,14 @@ export const useDeckStore = create((set, get) => ({
           currentIndex: savedState.currentIndex || 0,
           isLoaded: true,
         });
-        return true; // Indicate success
+        return true;
       }
     } catch (e) {
       console.error("Failed to restore deck state.", e);
     }
-    return false; // Indicate failure or no saved state
+    return false;
   },
 
-  // New action to clear the saved state
   clearSavedState: async () => {
     try {
       await AsyncStorage.removeItem(DECK_STORAGE_KEY);
@@ -88,11 +83,8 @@ export const useDeckStore = create((set, get) => ({
   }
 }));
 
-// --- Subscribe to state changes for persistence ---
-// This runs whenever the state changes and saves the relevant parts.
 useDeckStore.subscribe(
   (state) => {
-    // We only save if a deck is actually loaded to avoid saving empty/initial state.
     if (state.isLoaded && state.deckData.length > 0) {
       const stateToSave = {
         deckData: state.deckData,
