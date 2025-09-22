@@ -8,3 +8,4 @@
 1.  Check the async loading of ARASAAC and AACIL (might still be grabbing all at once) and add async to flaticon if it is not there
 1. Update the combined symbol metadata save to be more verbose and accurate, add file extensions for images
 1. Fix issue of text symbols naming with not allowed symbols, slugify doesn't work in a lot of corner cases so manual naming is best for now
+1. Update word ranks to include frequency to re rank in order among the words with the same contextual diversity (low priority)
