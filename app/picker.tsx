@@ -1,3 +1,5 @@
+// app/picker.tsx
+
 import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
@@ -27,7 +29,7 @@ import {
   cacheApiResults,
   getRepositoryDirectory,
   saveTextSymbol,
-  saveCombinedSymbol,
+  saveCombinedSymbolAndMetadata,
   saveSingleApiSymbol,
   autoSaveDeck,
 } from "../services/cachingService";
@@ -374,91 +376,105 @@ export default function PickerScreen() {
     });
   };
 
-  const handleSymbolPress = async (item, sourceName) => {
-    const uniqueId = `${sourceName}-${
-      item.filename || item.hexcode || item.id || item["symbol-en"]
-    }`;
-    if (isMultiSelect) {
-      if (selection.find((s) => s.uniqueId === uniqueId)) {
-        setSelection((prev) => prev.filter((s) => s.uniqueId !== uniqueId));
-        return;
-      }
-      const selectionItem = {
-        uniqueId,
-        sourceName,
-        name: item["symbol-en"] || item.name || item.annotation || "untitled",
-        imageUrl: item.imageUrl || null,
-        localUri: null,
-        filename: item.filename,
-        hexcode: item.hexcode,
-        id: item.id,
-      };
-      if (!selectionItem.imageUrl) {
-        const imageMap = {
-          Mulberry: mulberryImages,
-          OpenMoji: openmojiImages,
-          Picom: picomImages,
-          Sclera: scleraImages,
-          Bliss: blissImages,
-          "Noto Emoji": notoEmojiImages,
+    const handleSymbolPress = async (item, sourceName) => {
+      const uniqueId = `${sourceName}-${
+        item.filename || item.hexcode || item.id || item["symbol-en"]
+      }`;
+
+      if (isMultiSelect) {
+        // Logic for adding a symbol to the multi-selection tray
+        if (selection.find((s) => s.uniqueId === uniqueId)) {
+          // Item is already selected, so de-select it
+          setSelection((prev) => prev.filter((s) => s.uniqueId !== uniqueId));
+          return;
+        }
+
+        // --- FIX: Robustly determine the base filename and add extension ---
+        // Use the 'filename' property if it exists, otherwise fall back to 'hexcode' (for OpenMoji)
+        const baseFilename = item.filename || item.hexcode;
+
+        const selectionItem = {
+          uniqueId,
+          sourceName,
+          name: item["symbol-en"] || item.name || item.annotation || "untitled",
+          imageUrl: item.imageUrl || null,
+          localUri: null,
+          // For local symbols, create a complete filename. For API symbols, it's null.
+          filename: item.imageUrl ? null : `${baseFilename}.png`,
+          hexcode: item.hexcode,
+          id: item.id,
         };
-        const keyMap = {
-          Mulberry: item.filename,
-          OpenMoji: item.hexcode,
-          Picom: item.filename,
-          Sclera: item.filename,
-          Bliss: item.filename,
-          "Noto Emoji": item.filename,
-        };
-        const imageResource = imageMap[sourceName]?.[keyMap[sourceName]];
-        if (imageResource) {
-          try {
-            const asset = Asset.fromModule(imageResource);
-            await asset.downloadAsync();
-            if (asset.localUri) {
-              selectionItem.localUri = asset.localUri;
-            } else {
-              throw new Error("Asset downloaded but no local URI available.");
+
+        // If the symbol is a local asset, we need to get its local URI for display
+        if (!selectionItem.imageUrl) {
+          const imageMap = {
+            Mulberry: mulberryImages,
+            OpenMoji: openmojiImages,
+            Picom: picomImages,
+            Sclera: scleraImages,
+            Bliss: blissImages,
+            "Noto Emoji": notoEmojiImages,
+          };
+          // Use the same robust identifier logic here
+          const keyMapKey = item.filename || item.hexcode;
+          const imageResource = imageMap[sourceName]?.[keyMapKey];
+
+          if (imageResource) {
+            try {
+              const asset = Asset.fromModule(imageResource);
+              await asset.downloadAsync();
+              if (asset.localUri) {
+                selectionItem.localUri = asset.localUri;
+              } else {
+                throw new Error("Asset downloaded but no local URI available.");
+              }
+            } catch (e) {
+              console.error("Failed to load local asset:", e);
+              Alert.alert("Error", "Could not load the selected local symbol.");
+              return;
             }
-          } catch (e) {
-            console.error("Failed to load local asset:", e);
-            Alert.alert("Error", "Could not load the selected local symbol.");
+          } else {
+            Alert.alert(
+              "Error",
+              `Could not find image resource for selection.`
+            );
             return;
           }
-        } else {
-          Alert.alert("Error", `Could not find image resource for selection.`);
-          return;
         }
-      }
-      setSelection((currentSelection) => [...currentSelection, selectionItem]);
-    } else {
-      // --- SINGLE SYMBOL SELECTION LOGIC ---
-      const symbolName = item.name || item["symbol-en"];
-      if (item.imageUrl) {
-        // --- This is for API sources (ARASAAC, Flaticon, etc.) ---
-        const repoDir = await getRepositoryDirectory();
-        if (!repoDir) {
-          Alert.alert("Error", "Repository directory not set.");
-          return;
-        }
-        const savedFile = await saveSingleApiSymbol(repoDir, item, sourceName);
-        if (savedFile) {
-          // CORRECTED CALL 1: Pass filename and fileUri as separate arguments
-          selectSymbol(
-            symbolName,
-            sourceName,
-            savedFile.filename,
-            savedFile.fileUri
-          );
-        }
+        setSelection((currentSelection) => [
+          ...currentSelection,
+          selectionItem,
+        ]);
       } else {
-        // --- This is for LOCAL sources (Mulberry, Sclera, etc.) ---
-        const identifier = item.filename || item.hexcode;
-        // CORRECTED CALL 2: Append .png and pass null for the path
-        selectSymbol(symbolName, sourceName, `${identifier}.png`, null);
+        // --- This is the logic for single-symbol selection (UNCHANGED) ---
+        const symbolName = item.name || item["symbol-en"];
+        if (item.imageUrl) {
+          // This is for API sources (ARASAAC, Flaticon, etc.)
+          const repoDir = await getRepositoryDirectory();
+          if (!repoDir) {
+            Alert.alert("Error", "Repository directory not set.");
+            return;
+          }
+          const savedFile = await saveSingleApiSymbol(
+            repoDir,
+            item,
+            sourceName
+          );
+          if (savedFile) {
+            selectSymbol(
+              symbolName,
+              sourceName,
+              savedFile.filename,
+              savedFile.fileUri
+            );
+          }
+        } else {
+          // This is for LOCAL sources (Mulberry, Sclera, etc.)
+          const identifier = item.filename || item.hexcode;
+          selectSymbol(symbolName, sourceName, `${identifier}.png`, null);
+        }
       }
-    }
-  };
+    };
 
   const handleSaveTextSymbol = async ({ base64Data, symbolName }) => {
     setIsTextModalVisible(false);
@@ -469,7 +485,6 @@ export default function PickerScreen() {
     }
     const savedFile = await saveTextSymbol(repoDir, base64Data, symbolName);
     if (savedFile) {
-      // CORRECTED CALL 3: Pass filename and fileUri as separate arguments
       selectSymbol(
         symbolName,
         "Custom Text",
@@ -484,13 +499,18 @@ export default function PickerScreen() {
     setIsCombineModalVisible(false);
     const repoDir = await getRepositoryDirectory();
     if (!repoDir) return;
-    const savedFile = await saveCombinedSymbol(
+
+    // --- UPDATED LOGIC ---
+    // Replace the old saveCombinedSymbol with the new function that also handles metadata
+    const savedFile = await saveCombinedSymbolAndMetadata(
       repoDir,
       base64Data,
-      combinedName
+      combinedName,
+      selection, // Pass the full selection array
+      isOrType // Pass the boolean for combination type
     );
+
     if (savedFile) {
-      // CORRECTED CALL 4: Pass filename and fileUri as separate arguments
       selectSymbol(
         combinedName,
         "Combined",
@@ -501,6 +521,7 @@ export default function PickerScreen() {
       nextWord();
     }
   };
+
 
   const handleExport = async () => {
     if (deckData.length === 0) {

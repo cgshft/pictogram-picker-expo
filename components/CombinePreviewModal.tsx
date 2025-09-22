@@ -1,3 +1,5 @@
+// components/CombinePreviewModal.tsx
+
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
@@ -26,12 +28,10 @@ interface CombinePreviewModalProps {
 }
 
 // Helper to get a local file URI for an image asset
-// FIX 1: Accept the index to guarantee a unique filename
 const getLocalImageUri = async (item: any, index: number): Promise<string> => {
   if (item.localUri) return item.localUri;
 
   if (item.imageUrl) {
-    // FIX 2: Add the index to the temporary filename
     const tempFileUri =
       FileSystem.cacheDirectory + `combine_remote_${index}_${Date.now()}.png`;
     try {

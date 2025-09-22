@@ -1,3 +1,5 @@
+// services/cachingService.ts
+
 import { Directory, File } from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import Papa from 'papaparse';
@@ -6,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY = "@SymbolPickerRepoDirectoryUri";
 const METADATA_HEADERS = ["timestamp", "search_query", "source", "symbol_name", "symbol_id", "original_url", "saved_path", "filename"];
+const COMBINED_METADATA_HEADERS = ["timestamp", "filename", "saved_path", "combination_type", "component_symbols"];
 
 export const getRepositoryDirectory = async (): Promise<Directory | null> => {
   try {
@@ -279,5 +282,74 @@ export const autoSaveDeck = async (deckData: any[], deckName: string): Promise<v
 export const saveTextSymbol = (repoDir: Directory, base64Data: string, symbolName: string) => 
     saveDataWithSAF(repoDir, "Custom Text", base64Data, symbolName);
 
-export const saveCombinedSymbol = (repoDir: Directory, base64Data: string, symbolName: string) =>
-    saveDataWithSAF(repoDir, "Combined", base64Data, symbolName);
+export const saveCombinedSymbolAndMetadata = async (
+    repoDir: Directory,
+    base64Data: string,
+    symbolName: string,
+    selection: any[],
+    isOrType: boolean
+  ): Promise<{ fileUri: string; filename: string } | null> => {
+    // First, save the combined image file to the 'Combined' directory
+    const savedFile = await saveDataWithSAF(repoDir, "Combined", base64Data, symbolName);
+  
+    if (!savedFile) {
+      // If saving the image failed, stop here
+      return null;
+    }
+  
+    try {
+      // Now, get or create the metadata file for combined symbols
+      const dirAndFile = await getOrCreateMetadataFileForSource(repoDir, "Combined");
+      if (!dirAndFile) throw new Error("Could not get or create metadata file for Combined symbols.");
+      
+      const { metadataFile } = dirAndFile;
+  
+      // Read any existing data from the metadata CSV
+      let oldData = [];
+      try {
+        const oldCsvString = await FileSystemLegacy.readAsStringAsync(metadataFile.uri);
+        if (oldCsvString) {
+          const parsed = Papa.parse(oldCsvString, { header: true, skipEmptyLines: true });
+          oldData = parsed.data || [];
+        }
+      } catch (readError) {
+        console.log("Combined metadata file is new or empty.");
+      }
+  
+      // Prepare the new row for the metadata file
+      const newMetadataRow = {
+        timestamp: new Date().toISOString(),
+        filename: savedFile.filename,
+        saved_path: savedFile.fileUri,
+        combination_type: isOrType ? 'or' : 'and',
+        // Store the component symbols as a JSON string for easy parsing later
+        component_symbols: JSON.stringify(
+          selection.map(s => ({
+            name: s.name,
+            source: s.sourceName,
+            filename: s.filename,
+            id: s.id,
+          }))
+        ),
+      };
+  
+      const combinedData = [...oldData, newMetadataRow];
+  
+      // Write the updated data back to the metadata CSV, including headers
+      const finalCsvString = Papa.unparse(combinedData, {
+        header: true,
+        columns: COMBINED_METADATA_HEADERS,
+      });
+  
+      await FileSystemLegacy.writeAsStringAsync(metadataFile.uri, finalCsvString, { encoding: 'utf8' });
+  
+      // Return the saved file info to be used in the picker
+      return savedFile;
+  
+    } catch (e) {
+      console.error("Failed to save combined symbol metadata:", e);
+      Alert.alert("Metadata Error", `Could not save the metadata for the combined symbol. ${e.message}`);
+      // Even if metadata fails, the file was saved, so we return its info
+      return savedFile;
+    }
+  };
