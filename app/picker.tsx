@@ -173,10 +173,11 @@ export default function PickerScreen() {
               Bliss: blissImages,
               "Noto Emoji": notoEmojiImages,
             };
-            const key =
-              source === "OpenMoji"
-                ? fileIdentifier.split(".")[0]
-                : fileIdentifier;
+
+            // --- FIX: Remove the file extension for ALL local sources ---
+            // This ensures "candle_2.png" becomes "candle_2" before the lookup.
+            const key = fileIdentifier.split(".")[0];
+
             const imageResource = imageMap[source]?.[key];
             if (imageResource) {
               const asset = Asset.fromModule(imageResource);
