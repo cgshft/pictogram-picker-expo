@@ -104,18 +104,17 @@ export const autoSaveDeck = async (deckData: any[], deckName: string): Promise<v
       return;
     }
 
-    const safeDeckName = deckName.replace(/[^a-zA-Z0-9]/g, '_');
-    const filename = `_deck_${safeDeckName}.csv`;
+    // --- FIX: Sanitize the name but preserve the period for the file extension ---
+    // This removes the "_deck_" prefix and keeps the ".csv" from the original name.
+    const filename = deckName.replace(/[^a-zA-Z0-9.]/g, '_');
 
     const csvString = Papa.unparse(deckData);
 
     const dirContentsUris = await FileSystemLegacy.StorageAccessFramework.readDirectoryAsync(repoDir.uri);
 
-    // CRITICAL FIX: The URI is URL-encoded, so we must decode it before checking the file path.
     let fileUri = dirContentsUris.find(uri => decodeURIComponent(uri).endsWith(`/${filename}`));
 
     if (!fileUri) {
-      // File does not exist, create it for the first time.
       fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(
         repoDir.uri,
         filename,
@@ -123,7 +122,6 @@ export const autoSaveDeck = async (deckData: any[], deckName: string): Promise<v
       );
     }
 
-    // Now, with the correct URI (either found or newly created), overwrite the file content.
     await FileSystemLegacy.writeAsStringAsync(fileUri, csvString, { encoding: 'utf8' });
 
   } catch (e) {

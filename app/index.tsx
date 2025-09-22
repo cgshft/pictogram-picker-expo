@@ -1,22 +1,23 @@
 // app/index.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { StyleSheet, View, Text, TouchableOpacity, Alert } from "react-native";
-import { useRouter, useFocusEffect } from "expo-router"; // Import useFocusEffect
+import { useRouter, useFocusEffect } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import Papa from "papaparse";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDeckStore } from "../state/store";
 import { vocabularyData } from "../assets/vocabulary.js";
+import DeckNameModal from "../components/DeckNameModal"; // 👈 Import the new modal
 
-const DECK_STORAGE_KEY = "@CurrentDeckState"; // Use the same key
+const DECK_STORAGE_KEY = "@CurrentDeckState";
 
 export default function StartScreen() {
   const router = useRouter();
   const { loadDeck, restoreState, clearSavedState } = useDeckStore();
   const [savedDeckName, setSavedDeckName] = useState(null);
+  const [isModalVisible, setIsModalVisible] = useState(false); // 👈 State for modal visibility
 
-  // useFocusEffect will run every time the screen comes into view
   useFocusEffect(
     React.useCallback(() => {
       const checkForSavedDeck = async () => {
@@ -48,8 +49,8 @@ export default function StartScreen() {
       complete: async (results) => {
         if (results.data && results.errors.length === 0) {
           console.log(`Parsed ${results.data.length} rows successfully.`);
-          await clearSavedState(); // Clear any old session
-          loadDeck(results.data, fileName); // This will save the new state via subscribe
+          await clearSavedState();
+          loadDeck(results.data, fileName);
           router.push("/picker");
         } else {
           Alert.alert(
@@ -80,14 +81,23 @@ export default function StartScreen() {
     }
   };
 
-  const handleStartNew = async () => {
-    await clearSavedState(); // Clear any old session before starting
-    loadDeck(vocabularyData, "New Deck.csv"); // This will save the new state via subscribe
+  // 👈 MODIFIED: This now opens the modal instead of starting directly
+  const handleStartNew = () => {
+    setIsModalVisible(true);
+  };
+
+  // 👈 NEW: This function handles saving the named deck
+  const handleSaveNewDeck = async (name: string) => {
+    setIsModalVisible(false); // Close the modal
+    // Ensure the name ends with .csv for consistency
+    const finalName = name.endsWith(".csv") ? name : `${name}.csv`;
+    await clearSavedState();
+    loadDeck(vocabularyData, finalName);
     router.push("/picker");
   };
 
   const handleResume = async () => {
-    const success = await restoreState(); // Restore state from storage into the store
+    const success = await restoreState();
     if (success) {
       router.push("/picker");
     } else {
@@ -95,8 +105,8 @@ export default function StartScreen() {
         "Error",
         "Could not load saved session. It may be corrupted."
       );
-      await clearSavedState(); // Clear the corrupted state
-      setSavedDeckName(null); // Clear the button if loading fails
+      await clearSavedState();
+      setSavedDeckName(null);
     }
   };
 
@@ -104,7 +114,6 @@ export default function StartScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>Symbol Picker</Text>
       <View style={styles.buttonContainer}>
-        {/* Conditionally render the Resume button */}
         {savedDeckName && (
           <TouchableOpacity
             style={[styles.button, styles.resumeButton]}
@@ -124,17 +133,24 @@ export default function StartScreen() {
           <Text style={styles.buttonText}>Load Existing Deck</Text>
         </TouchableOpacity>
       </View>
+
+      {/* 👈 Render the modal component here */}
+      <DeckNameModal
+        visible={isModalVisible}
+        onSave={handleSaveNewDeck}
+        onClose={() => setIsModalVisible(false)}
+      />
     </View>
   );
 }
 
-// Update styles to include the new resume button style
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+    backgroundColor: "#1C1C1E",
   },
   title: {
     fontSize: 32,
@@ -154,14 +170,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   resumeButton: {
-    backgroundColor: "#34C759", // A green color for "resume"
+    backgroundColor: "#34C759",
   },
   secondaryButton: {
-    backgroundColor: "#444444",
+    backgroundColor: "#555",
   },
   buttonText: {
     color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "600",
   },
-});     
+});
