@@ -143,12 +143,10 @@ export default function PickerScreen() {
   }, [currentWord]);
 
   useEffect(() => {
-    // Auto-save the deck to its CSV file whenever the data changes.
     if (isLoaded && deckData.length > 0 && deckName) {
-      // This runs in the background. Errors are handled within the function.
       autoSaveDeck(deckData, deckName);
     }
-  }, [deckData]); // The effect runs whenever deckData is updated
+  }, [deckData]);
 
   useEffect(() => {
     if (viewMode === "display" && currentWord?.symbol_filename) {
@@ -158,13 +156,12 @@ export default function PickerScreen() {
           const fileIdentifier = currentWord.symbol_filename;
           if (!fileIdentifier)
             throw new Error("Filename is missing from deck data.");
-          let fileUriToRead: string;
-          if (
-            fileIdentifier.startsWith("content://") ||
-            fileIdentifier.startsWith("file://")
-          ) {
-            fileUriToRead = fileIdentifier;
-          } else {
+
+          // Use android_path if it exists, otherwise treat it as a local asset
+          let fileUriToRead: string = currentWord.android_path;
+
+          if (!fileUriToRead) {
+            // Handle local assets
             const source = currentWord.symbol_source;
             const imageMap = {
               Mulberry: mulberryImages,
@@ -188,9 +185,17 @@ export default function PickerScreen() {
                 );
               fileUriToRead = asset.localUri;
             } else {
-              throw new Error(
-                `Could not find local asset for "${fileIdentifier}" in source "${source}".`
-              );
+              // Fallback for older data that might still use content:// in symbol_filename
+              if (
+                fileIdentifier.startsWith("content://") ||
+                fileIdentifier.startsWith("file://")
+              ) {
+                fileUriToRead = fileIdentifier;
+              } else {
+                throw new Error(
+                  `Could not find local asset for "${fileIdentifier}" in source "${source}".`
+                );
+              }
             }
           }
           const base64Content = await FileSystemLegacy.readAsStringAsync(
@@ -427,8 +432,10 @@ export default function PickerScreen() {
       }
       setSelection((currentSelection) => [...currentSelection, selectionItem]);
     } else {
+      // --- SINGLE SYMBOL SELECTION LOGIC ---
       const symbolName = item.name || item["symbol-en"];
       if (item.imageUrl) {
+        // --- This is for API sources (ARASAAC, Flaticon, etc.) ---
         const repoDir = await getRepositoryDirectory();
         if (!repoDir) {
           Alert.alert("Error", "Repository directory not set.");
@@ -436,14 +443,23 @@ export default function PickerScreen() {
         }
         const savedFile = await saveSingleApiSymbol(repoDir, item, sourceName);
         if (savedFile) {
-          selectSymbol(symbolName, sourceName, savedFile.fileUri);
+          // CORRECTED CALL 1: Pass filename and fileUri as separate arguments
+          selectSymbol(
+            symbolName,
+            sourceName,
+            savedFile.filename,
+            savedFile.fileUri
+          );
         }
       } else {
+        // --- This is for LOCAL sources (Mulberry, Sclera, etc.) ---
         const identifier = item.filename || item.hexcode;
-        selectSymbol(symbolName, sourceName, identifier);
+        // CORRECTED CALL 2: Append .png and pass null for the path
+        selectSymbol(symbolName, sourceName, `${identifier}.png`, null);
       }
     }
   };
+
   const handleSaveTextSymbol = async ({ base64Data, symbolName }) => {
     setIsTextModalVisible(false);
     const repoDir = await getRepositoryDirectory();
@@ -453,10 +469,17 @@ export default function PickerScreen() {
     }
     const savedFile = await saveTextSymbol(repoDir, base64Data, symbolName);
     if (savedFile) {
-      selectSymbol(symbolName, "Custom Text", savedFile.fileUri);
+      // CORRECTED CALL 3: Pass filename and fileUri as separate arguments
+      selectSymbol(
+        symbolName,
+        "Custom Text",
+        savedFile.filename,
+        savedFile.fileUri
+      );
       nextWord();
     }
   };
+
   const handleSaveCombination = async ({ base64Data, combinedName }) => {
     setIsCombineModalVisible(false);
     const repoDir = await getRepositoryDirectory();
@@ -467,11 +490,18 @@ export default function PickerScreen() {
       combinedName
     );
     if (savedFile) {
-      selectSymbol(combinedName, "Combined", savedFile.fileUri);
+      // CORRECTED CALL 4: Pass filename and fileUri as separate arguments
+      selectSymbol(
+        combinedName,
+        "Combined",
+        savedFile.filename,
+        savedFile.fileUri
+      );
       toggleMultiSelect();
       nextWord();
     }
   };
+
   const handleExport = async () => {
     if (deckData.length === 0) {
       alert("No data to export.");
@@ -898,7 +928,7 @@ export default function PickerScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 10 },
+  container: { flex: 1, padding: 10, backgroundColor: "#1C1C1E" },
   wordContainer: { width: "100%", paddingHorizontal: 10, marginBottom: 10 },
   wordInfoRow: {
     flexDirection: "row",

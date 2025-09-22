@@ -1,5 +1,7 @@
+// services/cachingService.ts
+
 import { Directory, File } from 'expo-file-system';
-import * as FileSystemLegacy from 'expo-file-system/legacy';
+import * as FileSystemLegacy    from 'expo-file-system/legacy';
 import Papa from 'papaparse';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -130,59 +132,57 @@ export const autoSaveDeck = async (deckData: any[], deckName: string): Promise<v
 };
 
 export const saveSingleApiSymbol = async (
-    repoDir: Directory,
-    item: { id: any; name: string; imageUrl: string },
-    sourceName: string
-  ): Promise<{ fileUri: string; filename: string } | null> => {
-    try {
-      const dirAndFile = await getOrCreateMetadataFileForSource(repoDir, sourceName);
-      if (!dirAndFile) throw new Error(`Could not get or create metadata file for ${sourceName}.`);
-      // Deconstruct the return object to get the reliable sourceDir
-      const { metadataFile, sourceDir } = dirAndFile;
+  repoDir: Directory,
+  item: { id: any; name: string; imageUrl: string },
+  sourceName: string
+): Promise<{ fileUri: string; filename: string } | null> => {
+  try {
+    const dirAndFile = await getOrCreateMetadataFileForSource(repoDir, sourceName);
+    if (!dirAndFile) throw new Error(`Could not get or create metadata file for ${sourceName}.`);
+    const { metadataFile, sourceDir } = dirAndFile;
 
-      let fileExtension = 'png';
-      if (item.imageUrl.includes('.svg')) fileExtension = 'svg';
-      else if (item.imageUrl.includes('.jpg') || item.imageUrl.includes('.jpeg')) fileExtension = 'jpg';
-      
-      const safeName = (item.name || 'untitled').replace(/[^a-zA-Z0-9]/g, '_');
-      const finalFilename = `${safeName}_${item.id}.${fileExtension}`;
-  
-      // FIX: Use the reliable sourceDir.uri to save the image file
-      const fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(sourceDir.uri, finalFilename, `image/${fileExtension}`);
+    let fileExtension = 'png';
+    if (item.imageUrl.includes('.svg')) fileExtension = 'svg';
+    else if (item.imageUrl.includes('.jpg') || item.imageUrl.includes('.jpeg')) fileExtension = 'jpg';
+     
+    const safeName = (item.name || 'untitled').replace(/[^a-zA-Z0-9]/g, '_');
+    const finalFilename = `${safeName}_${item.id}.${fileExtension}`;
 
-      const response = await fetch(item.imageUrl);
-      const base64Data = await response.blob().then(blob => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      })) as string;
+    const fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(sourceDir.uri, finalFilename, `image/${fileExtension}`);
 
-      await FileSystemLegacy.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' });
+    const response = await fetch(item.imageUrl);
+    const base64Data = await response.blob().then(blob => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    })) as string;
 
-      const newMetadataRow = [{ 
-          timestamp: new Date().toISOString(), 
-          search_query: 'single_selection', 
-          source: sourceName, 
-          symbol_name: item.name, 
-          symbol_id: item.id, 
-          original_url: item.imageUrl, 
-          saved_path: fileUri,
-          filename: finalFilename 
-        }];
-      const newCsvString = Papa.unparse(newMetadataRow, { header: false });
-      await FileSystemLegacy.writeAsStringAsync(metadataFile.uri, newCsvString + '\n', { encoding: 'utf8', append: true });
-  
-      return { fileUri: fileUri, filename: `${sourceName}/${finalFilename}` };
-  
-    } catch (e) {
-      if (!e.message.includes('file already exists')) {
-        console.error(`Failed to save single API symbol: ${item.name}`, e);
-        Alert.alert("Save Error", `Could not save the symbol for ${item.name}.`);
-      }
-      return null;
+    await FileSystemLegacy.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' });
+
+    const newMetadataRow = [{ 
+        timestamp: new Date().toISOString(), 
+        search_query: 'single_selection', 
+        source: sourceName, 
+        symbol_name: item.name, 
+        symbol_id: item.id, 
+        original_url: item.imageUrl, 
+        saved_path: fileUri,
+        filename: finalFilename 
+      }];
+    const newCsvString = Papa.unparse(newMetadataRow, { header: false });
+    await FileSystemLegacy.writeAsStringAsync(metadataFile.uri, newCsvString + '\n', { encoding: 'utf8', append: true });
+
+    return { fileUri: fileUri, filename: finalFilename };
+
+  } catch (e) {
+    if (!e.message.includes('file already exists')) {
+      console.error(`Failed to save single API symbol: ${item.name}`, e);
+      Alert.alert("Save Error", `Could not save the symbol for ${item.name}.`);
     }
-  };
+    return null;
+  }
+};
 
 
 export const saveTextSymbol = (repoDir: Directory, base64Data: string, symbolName: string) => 
@@ -255,7 +255,7 @@ const saveDataWithSAF = async ( repoDir: Directory, subdirectory: string, base64
     );
 
     await FileSystemLegacy.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' });
-    return { fileUri, filename: `${subdirectory}/${finalFilename}` };
+    return { fileUri, filename: finalFilename };
   } catch (e) {
     console.error(`Failed to save symbol to ${subdirectory}:`, e);
     Alert.alert("Save Error", `Could not save the symbol. ${e.message}`);
