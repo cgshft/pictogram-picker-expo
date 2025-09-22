@@ -602,11 +602,6 @@ export default function PickerScreen() {
   const screenOptions = useMemo(
     () => ({
       title: deckName,
-      headerRight: () => (
-        <View style={{ flexDirection: "row" }}>
-          <Button onPress={handleExport} title="Export Deck" />
-        </View>
-      ),
     }),
     [deckName, deckData]
   );
