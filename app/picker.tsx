@@ -29,6 +29,7 @@ import {
   saveTextSymbol,
   saveCombinedSymbol,
   saveSingleApiSymbol,
+  autoSaveDeck,
 } from "../services/cachingService";
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
@@ -140,6 +141,14 @@ export default function PickerScreen() {
     }
     setNoteInput(currentWord?.notes || "");
   }, [currentWord]);
+
+  useEffect(() => {
+    // Auto-save the deck to its CSV file whenever the data changes.
+    if (isLoaded && deckData.length > 0 && deckName) {
+      // This runs in the background. Errors are handled within the function.
+      autoSaveDeck(deckData, deckName);
+    }
+  }, [deckData]); // The effect runs whenever deckData is updated
 
   useEffect(() => {
     if (viewMode === "display" && currentWord?.symbol_filename) {
@@ -319,17 +328,15 @@ export default function PickerScreen() {
     )
       .then((res) => (res.ok ? res.json() : []))
       .then((json) => {
-        const results = json
-          .slice(0, 4)
-          .map((r) => ({
-            item: {
-              id: r._id,
-              name: r.keywords?.[0]?.keyword || "untitled",
-              imageUrl: `https://api.arasaac.org/api/pictograms/${r._id}`,
-            },
-            score: 0,
-            refIndex: r._id,
-          }));
+        const results = json.slice(0, 4).map((r) => ({
+          item: {
+            id: r._id,
+            name: r.keywords?.[0]?.keyword || "untitled",
+            imageUrl: `https://api.arasaac.org/api/pictograms/${r._id}`,
+          },
+          score: 0,
+          refIndex: r._id,
+        }));
         if (results.length > 0) {
           setSearchResults((prev) => ({ ...prev, ARASAAC: results }));
           cacheApiResults(results, "ARASAAC", query, repoDir);

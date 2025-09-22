@@ -28,46 +28,6 @@ export const getRepositoryDirectory = async (): Promise<Directory | null> => {
   return null;
 };
 
-// This helper now returns BOTH the metadata file and its parent source directory
-const getOrCreateMetadataFileForSource = async (
-  repoDir: Directory,
-  sourceName: string
-): Promise<{ metadataFile: File; sourceDir: Directory } | null> => {
-  try {
-    const repoContents = await repoDir.list();
-    let sourceDir = repoContents.find(
-      (item) => item.name === sourceName && item instanceof Directory
-    ) as Directory;
-    if (!sourceDir) {
-      sourceDir = await repoDir.createDirectory(sourceName);
-    }
-
-    const metadataFilename = `_${sourceName}_metadata.csv`;
-    const sourceDirFiles = await FileSystemLegacy.StorageAccessFramework.readDirectoryAsync(sourceDir.uri);
-    const existingFileUri = sourceDirFiles.find(uri => uri.endsWith(metadataFilename));
-
-    let finalFileUri: string;
-
-    if (existingFileUri) {
-      finalFileUri = existingFileUri;
-    } else {
-      finalFileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(
-        sourceDir.uri,
-        metadataFilename,
-        'text/csv'
-      );
-      // Removed header logic as requested
-    }
-    
-    return { metadataFile: new File(finalFileUri), sourceDir };
-
-  } catch (e) {
-    console.error(`Error setting up metadata for ${sourceName}:`, e);
-    Alert.alert("Metadata Error", `Could not create or access metadata file for ${sourceName}.`);
-    return null;
-  }
-};
-
 export const cacheApiResults = async (results, sourceName, searchQuery, repoDir: Directory) => {
   if (Platform.OS === 'web' || !results || results.length === 0 || !repoDir) return;
 
@@ -123,32 +83,49 @@ export const cacheApiResults = async (results, sourceName, searchQuery, repoDir:
   }
 };
 
-const saveDataWithSAF = async ( repoDir: Directory, subdirectory: string, base64Data: string, symbolName: string ): Promise<{ fileUri: string; filename: string } | null> => {
+/**
+ * Auto-saves the entire deck data to a CSV file in the root of the repository directory.
+ * This function overwrites the file on each call to ensure it's always up-to-date.
+ * @param deckData The array of deck data objects.
+ * @param deckName The name of the deck, used for the filename.
+ */
+export const autoSaveDeck = async (deckData: any[], deckName: string): Promise<void> => {
+  // Don't run on web or if there's no data/name to save
+  if (Platform.OS === 'web' || !deckData || deckData.length === 0 || !deckName) {
+    return;
+  }
+
   try {
-    const repoContents = await repoDir.list();
-    let destinationDir = repoContents.find(
-      (item) => item.name === subdirectory && item instanceof Directory
-    ) as Directory;
-
-    if (!destinationDir) {
-      destinationDir = await repoDir.createDirectory(subdirectory);
+    const repoDir = await getRepositoryDirectory();
+    if (!repoDir) {
+      console.log("Auto-save failed: Repository directory not selected.");
+      return;
     }
-    
-    const safeName = symbolName.replace(/[^a-zA-Z0-9\s/]/g, '_').replace(/\s\/\s/g, '-');
-    const finalFilename = `${safeName}_${Date.now()}.png`;
-    
-    const fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(
-      destinationDir.uri,
-      finalFilename,
-      'image/png'
-    );
 
-    await FileSystemLegacy.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' });
-    return { fileUri, filename: `${subdirectory}/${finalFilename}` };
+    const safeDeckName = deckName.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `_deck_${safeDeckName}.csv`;
+
+    const csvString = Papa.unparse(deckData);
+
+    const dirContentsUris = await FileSystemLegacy.StorageAccessFramework.readDirectoryAsync(repoDir.uri);
+
+    // CRITICAL FIX: The URI is URL-encoded, so we must decode it before checking the file path.
+    let fileUri = dirContentsUris.find(uri => decodeURIComponent(uri).endsWith(`/${filename}`));
+
+    if (!fileUri) {
+      // File does not exist, create it for the first time.
+      fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(
+        repoDir.uri,
+        filename,
+        'text/csv'
+      );
+    }
+
+    // Now, with the correct URI (either found or newly created), overwrite the file content.
+    await FileSystemLegacy.writeAsStringAsync(fileUri, csvString, { encoding: 'utf8' });
+
   } catch (e) {
-    console.error(`Failed to save symbol to ${subdirectory}:`, e);
-    Alert.alert("Save Error", `Could not save the symbol. ${e.message}`);
-    return null;
+    console.error("Failed to auto-save deck:", e);
   }
 };
 
@@ -212,4 +189,76 @@ export const saveTextSymbol = (repoDir: Directory, base64Data: string, symbolNam
     saveDataWithSAF(repoDir, "Custom Text", base64Data, symbolName);
 
 export const saveCombinedSymbol = (repoDir: Directory, base64Data: string, symbolName: string) =>
-    saveDataWithSAF(repoDir, "Combined", base64Data, symbolName);
+  saveDataWithSAF(repoDir, "Combined", base64Data, symbolName);
+
+// This helper now returns BOTH the metadata file and its parent source directory
+const getOrCreateMetadataFileForSource = async (
+  repoDir: Directory,
+  sourceName: string
+): Promise<{ metadataFile: File; sourceDir: Directory } | null> => {
+  try {
+    const repoContents = await repoDir.list();
+    let sourceDir = repoContents.find(
+      (item) => item.name === sourceName && item instanceof Directory
+    ) as Directory;
+    if (!sourceDir) {
+      sourceDir = await repoDir.createDirectory(sourceName);
+    }
+
+    const metadataFilename = `_${sourceName}_metadata.csv`;
+    const sourceDirFiles = await FileSystemLegacy.StorageAccessFramework.readDirectoryAsync(sourceDir.uri);
+    
+    // FIX: Decode URI component to reliably find the existing file.
+    const existingFileUri = sourceDirFiles.find(uri => decodeURIComponent(uri).endsWith(`/${metadataFilename}`));
+
+    let finalFileUri: string;
+
+    if (existingFileUri) {
+      finalFileUri = existingFileUri;
+    } else {
+      finalFileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(
+        sourceDir.uri,
+        metadataFilename,
+        'text/csv'
+      );
+    }
+    
+    return { metadataFile: new File(finalFileUri), sourceDir };
+
+  } catch (e) {
+    console.error(`Error setting up metadata for ${sourceName}:`, e);
+    Alert.alert("Metadata Error", `Could not create or access metadata file for ${sourceName}.`);
+    return null;
+  }
+};
+
+
+
+const saveDataWithSAF = async ( repoDir: Directory, subdirectory: string, base64Data: string, symbolName: string ): Promise<{ fileUri: string; filename: string } | null> => {
+  try {
+    const repoContents = await repoDir.list();
+    let destinationDir = repoContents.find(
+      (item) => item.name === subdirectory && item instanceof Directory
+    ) as Directory;
+
+    if (!destinationDir) {
+      destinationDir = await repoDir.createDirectory(subdirectory);
+    }
+    
+    const safeName = symbolName.replace(/[^a-zA-Z0-9\s/]/g, '_').replace(/\s\/\s/g, '-');
+    const finalFilename = `${safeName}_${Date.now()}.png`;
+    
+    const fileUri = await FileSystemLegacy.StorageAccessFramework.createFileAsync(
+      destinationDir.uri,
+      finalFilename,
+      'image/png'
+    );
+
+    await FileSystemLegacy.writeAsStringAsync(fileUri, base64Data, { encoding: 'base64' });
+    return { fileUri, filename: `${subdirectory}/${finalFilename}` };
+  } catch (e) {
+    console.error(`Failed to save symbol to ${subdirectory}:`, e);
+    Alert.alert("Save Error", `Could not save the symbol. ${e.message}`);
+    return null;
+  }
+};
