@@ -263,7 +263,15 @@ export const autoSaveDeck = async (deckData: any[], deckName: string): Promise<v
       return;
     }
     const filename = deckName.replace(/[^a-zA-Z0-9.]/g, '_');
-    const csvString = Papa.unparse(deckData);
+
+    // --- FIX: Explicitly define columns to ensure 'notes' is always included ---
+    const csvString = Papa.unparse(deckData, {
+      columns: [
+        "english", "Range Rank", "Contextual Diversity (Range)", "symbol_name",
+        "symbol_source", "folder_name", "symbol_filename", "android_path", "notes"
+      ]
+    });
+
     const dirContentsUris = await FileSystemLegacy.StorageAccessFramework.readDirectoryAsync(repoDir.uri);
     let fileUri = dirContentsUris.find(uri => decodeURIComponent(uri).endsWith(`/${filename}`));
     if (!fileUri) {

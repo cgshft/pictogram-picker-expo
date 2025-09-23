@@ -529,7 +529,15 @@ export default function PickerScreen() {
       alert("No data to export.");
       return;
     }
-    const csvString = Papa.unparse(deckData);
+
+    // --- FIX: Explicitly define columns to ensure 'notes' is always included ---
+    const csvString = Papa.unparse(deckData, {
+      columns: [
+        "english", "Range Rank", "Contextual Diversity (Range)", "symbol_name",
+        "symbol_source", "folder_name", "symbol_filename", "android_path", "notes"
+      ]
+    });
+
     const filename = `export_${Date.now()}.csv`;
     if (Platform.OS === "web") {
       const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
@@ -555,6 +563,7 @@ export default function PickerScreen() {
       }
     }
   };
+
   const handleSaveNote = () => {
     addNote(noteInput);
     setActiveInput(null);
@@ -899,9 +908,10 @@ export default function PickerScreen() {
               color="#888"
             />
             <Button
-              title="Combine & Save"
+              title="Combine"
               onPress={handleCombine}
               disabled={selection.length < 2}
+              color="#007AFF"
             />
           </View>
         </View>

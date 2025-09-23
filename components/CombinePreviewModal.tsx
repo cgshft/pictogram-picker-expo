@@ -16,7 +16,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { Asset } from "expo-asset";
 
 const IMG_SIZE = 512;
-const SEPARATOR_WIDTH = 150;
+const SEPARATOR_WIDTH = 250;
 const SEPARATOR_TEXT = "||";
 
 interface CombinePreviewModalProps {
@@ -215,7 +215,7 @@ export default function CombinePreviewModal({
             <Button
               title="Save Combination"
               onPress={handleSave}
-              disabled={isLoading || !combinedBase64}
+              // disabled={isLoading || !combinedBase64}
             />
           </View>
         </View>
