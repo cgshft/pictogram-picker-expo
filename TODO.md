@@ -1,4 +1,6 @@
 # TODOs
+1. Fix error: could not load images for combining for any non-api called images in apk build
+1. Prevent duplicate creation on image save
 1. Figure out how to add headers to the API call symbols metadata csv
 1. Fix symbol_name being blank for OpenMoji in csv export (probably because it is an actual emoji)
 1. Fix problem with app crashing after selecting folder save location
@@ -9,4 +11,5 @@
 1. Update the combined symbol metadata save to be more verbose and accurate, add file extensions for images
 1. Fix issue of text symbols naming with not allowed symbols, slugify doesn't work in a lot of corner cases so manual naming is best for now
 1. Update word ranks to include frequency to re rank in order among the words with the same contextual diversity (low priority)
-1. Fix first startup error
+1. Fix first startup 1
+1. Fix color of combine button in combine bottom bar view 

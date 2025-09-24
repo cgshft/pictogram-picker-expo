@@ -102,8 +102,8 @@ export default function SymbolItem({ item, source, onPress }: SymbolItemProps) {
 
 const styles = StyleSheet.create({
   container: {
-    width: 80,
-    height: 100,
+    width: 75,
+    height: 90,
     padding: 0,
     margin: 3,
     alignItems: "center",
@@ -115,6 +115,7 @@ const styles = StyleSheet.create({
     height: "80%",
     alignItems: "center",
     justifyContent: "center",
+    padding: 3
   },
   image: {
     width: "100%",
@@ -124,7 +125,7 @@ const styles = StyleSheet.create({
     color: "#E5E5EA",
     fontSize: 12,
     textAlign: "center",
-    marginTop: 2,
+    marginTop: 0,
   },
   errorText: {
     color: "yellow",

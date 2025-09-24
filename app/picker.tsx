@@ -747,7 +747,7 @@ export default function PickerScreen() {
               onPress={handleExportPress}
             >
               <Ionicons name="share-outline" size={24} color="white" />
-              <Text style={styles.toolbarLabel}>Export</Text>
+              <Text style={styles.toolbarLabel}>Save As</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -1025,13 +1025,13 @@ const styles = StyleSheet.create({
   sourceContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 0,
   },
   sourceHeaderContainer: {
-    width: 25,
+    width: 15,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 5,
+    marginRight: 3,
   },
   sourceHeaderText: {
     color: "white",
